@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NKSBOT — Config</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--p:#7c3aed;--pl:#a855f7;--bg:#08080f;--bg2:#0d0d1a;--bg3:#111124;--text:#f1f0ff;--muted:#8b87b0;--border:rgba(124,58,237,0.2)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;display:flex;min-height:100vh}
+.sidebar{width:230px;background:var(--bg2);border-right:1px solid var(--border);position:fixed;top:0;bottom:0;overflow-y:auto;z-index:10;display:flex;flex-direction:column}
+.logo-area{padding:1.2rem 1rem;border-bottom:1px solid var(--border)}
+.logo-area a{font-family:'Syne',sans-serif;font-weight:800;font-size:1.1rem;background:linear-gradient(135deg,#fff,var(--pl));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none;display:block}
+.logo-area .guild-name{color:var(--muted);font-size:.8rem;margin-top:.2rem}
+.nav-section{padding:.7rem 1rem .2rem;font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:.3rem}
+.nav-item{display:flex;align-items:center;gap:.6rem;padding:.6rem 1rem;cursor:pointer;color:var(--muted);font-size:.88rem;font-weight:500;transition:all .2s;border-left:3px solid transparent;user-select:none}
+.nav-item:hover{background:rgba(124,58,237,.06);color:var(--text)}
+.nav-item.active{background:rgba(124,58,237,.12);color:var(--pl);border-left-color:var(--p)}
+.nav-item .icon{font-size:1rem;width:18px;text-align:center}
+.main{margin-left:230px;flex:1;padding:2rem;max-width:880px}
+.section{display:none}.section.active{display:block}
+.section-title{font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:800;margin-bottom:1.5rem}
+.card{background:rgba(13,13,26,.95);border:1px solid var(--border);border-radius:14px;margin-bottom:1rem;overflow:hidden}
+.card-header{padding:.9rem 1.3rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-weight:600;font-size:.9rem}
+.card-body{padding:1.3rem;display:flex;flex-direction:column;gap:.9rem}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+.form-group{display:flex;flex-direction:column;gap:.35rem}
+label{font-size:.8rem;color:var(--muted);font-weight:500}
+.fc{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:.55rem .8rem;border-radius:8px;font-size:.88rem;font-family:inherit;transition:border-color .2s;width:100%}
+.fc:focus{outline:none;border-color:var(--p)}
+.fc option{background:var(--bg3)}
+textarea.fc{resize:vertical;min-height:75px}
+.tr{display:flex;align-items:center;justify-content:space-between;padding:.1rem 0}
+.toggle{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.sl{position:absolute;inset:0;background:rgba(255,255,255,.1);border-radius:24px;cursor:pointer;transition:.3s}
+.sl:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+input:checked+.sl{background:var(--p)}
+input:checked+.sl:before{transform:translateX(20px)}
+.btn{padding:.55rem 1.2rem;border-radius:8px;font-weight:600;font-size:.88rem;cursor:pointer;transition:all .2s;border:none;font-family:inherit}
+.btn-p{background:var(--p);color:#fff}.btn-p:hover{background:var(--pl)}
+.btn-sm{padding:.4rem .9rem;font-size:.8rem}
+.btn-danger{background:#ED4245;color:#fff}
+.btn-sec{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+.tag-wrap{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem}
+.tag{background:rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4);border-radius:20px;padding:.2rem .7rem;font-size:.8rem;display:flex;align-items:center;gap:.4rem}
+.tag-x{cursor:pointer;color:var(--muted);transition:color .2s}.tag-x:hover{color:#ED4245}
+.save-bar{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--p);border-radius:12px;padding:.7rem 1.5rem;display:none;align-items:center;gap:1rem;z-index:100;box-shadow:0 0 30px rgba(124,58,237,.3)}
+.save-bar.show{display:flex}
+.divider{border:none;border-top:1px solid var(--border);margin:.5rem 0}
+.premium-notice{background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.25);border-radius:10px;padding:.8rem 1rem;font-size:.85rem;color:#eab308;margin-bottom:.8rem}
+.notif-block{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:1.1rem;margin-bottom:.8rem}
+.notif-block-title{font-weight:600;font-size:.9rem;margin-bottom:.8rem;display:flex;align-items:center;gap:.5rem}
+#toast{position:fixed;bottom:2rem;right:2rem;background:var(--p);color:#fff;padding:.8rem 1.4rem;border-radius:10px;font-weight:600;display:none;z-index:9999;font-size:.9rem}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="logo-area">
+    <a href="/dashboard">← NKSBOT</a>
+    <div class="guild-name" id="gName">Chargement...</div>
+  </div>
+  <div class="nav-section">Général</div>
+  <div class="nav-item active" data-s="general"><span class="icon">🏠</span> Général</div>
+  <div class="nav-item" data-s="prefix"><span class="icon">⌨️</span> Préfixe & Panel</div>
+  <div class="nav-section">Modération</div>
+  <div class="nav-item" data-s="logs"><span class="icon">📋</span> Logs</div>
+  <div class="nav-item" data-s="welcome"><span class="icon">👋</span> Bienvenue</div>
+  <div class="nav-item" data-s="moderation"><span class="icon">🛡️</span> Anti-Raid & AutoMod</div>
+  <div class="nav-section">Fonctionnalités</div>
+  <div class="nav-item" data-s="tickets"><span class="icon">🎫</span> Tickets</div>
+  <div class="nav-item" data-s="xp"><span class="icon">📈</span> XP & Niveaux</div>
+  <div class="nav-item" data-s="economy"><span class="icon">💰</span> Économie</div>
+  <div class="nav-item" data-s="autoroles"><span class="icon">🎭</span> Auto-Rôles</div>
+  <div class="nav-section">Notifications</div>
+  <div class="nav-item" data-s="notifs"><span class="icon">🔔</span> YouTube / Twitch / TikTok</div>
+  <div class="nav-section">Avancé</div>
+  <div class="nav-item" data-s="embed"><span class="icon">📝</span> Embeds & Messages</div>
+  <div class="nav-item" data-s="botstatus"><span class="icon">🟣</span> Statut du Bot</div>
+  <div class="nav-item" data-s="premium"><span class="icon">⭐</span> Premium</div>
+  <div style="margin-top:auto;padding:1rem;border-top:1px solid var(--border)">
+    <a href="/auth/logout" style="color:var(--muted);font-size:.85rem;text-decoration:none">🚪 Déconnexion</a>
+  </div>
+</aside>
+
+<main class="main">
+  <!-- GÉNÉRAL -->
+  <div class="section active" id="s-general">
+    <div class="section-title">🏠 Général</div>
+    <div class="card"><div class="card-body" id="genInfo">Chargement...</div></div>
+  </div>
+
+  <!-- PRÉFIXE & PANEL -->
+  <div class="section" id="s-prefix">
+    <div class="section-title">⌨️ Préfixe & Accès Panel</div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Préfixe des commandes</div></div>
+      <div class="card-body">
+        <div class="form-group">
+          <label>Préfixe</label>
+          <select class="fc" id="prefix" onchange="dirty()">
+            <option value="!">! (point d'exclamation)</option>
+            <option value="/"">/ (slash)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🔐 Rôles ayant accès au panel</div></div>
+      <div class="card-body">
+        <p style="color:var(--muted);font-size:.85rem">Ces rôles pourront accéder au dashboard en plus des admins Discord.</p>
+        <div class="form-group">
+          <label>Ajouter un rôle</label>
+          <div style="display:flex;gap:.5rem">
+            <select class="fc" id="panelRoleSelect" style="flex:1"><option value="">Choisir un rôle...</option></select>
+            <button class="btn btn-p btn-sm" onclick="addPanelRole()">+ Ajouter</button>
+          </div>
+        </div>
+        <div class="tag-wrap" id="panelRoleList"></div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="saveSection('prefix')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- LOGS -->
+  <div class="section" id="s-logs">
+    <div class="section-title">📋 Salons de logs</div>
+    <div class="card"><div class="card-body">
+      <div class="form-row">
+        <div class="form-group"><label>👥 Membres</label><select class="fc" id="log_membres" onchange="dirty()"><option value="">Désactivé</option></select></div>
+        <div class="form-group"><label>💬 Messages</label><select class="fc" id="log_messages" onchange="dirty()"><option value="">Désactivé</option></select></div>
+        <div class="form-group"><label>🔨 Modération</label><select class="fc" id="log_moderation" onchange="dirty()"><option value="">Désactivé</option></select></div>
+        <div class="form-group"><label>🎙️ Vocal</label><select class="fc" id="log_vocal" onchange="dirty()"><option value="">Désactivé</option></select></div>
+        <div class="form-group"><label>🚨 Anti-Raid</label><select class="fc" id="log_raid" onchange="dirty()"><option value="">Désactivé</option></select></div>
+        <div class="form-group"><label>⌨️ Commandes</label><select class="fc" id="log_commandes" onchange="dirty()"><option value="">Désactivé</option></select></div>
+      </div>
+    </div></div>
+    <button class="btn btn-p" onclick="saveSection('logs')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- BIENVENUE -->
+  <div class="section" id="s-welcome">
+    <div class="section-title">👋 Bienvenue & Au revoir</div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Message de bienvenue</div><label class="toggle"><input type="checkbox" id="welcome_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Salon</label><select class="fc" id="welcome_channel" onchange="dirty()"><option value="">Aucun</option></select></div>
+          <div class="form-group"><label>Couleur</label><input type="color" class="fc" id="welcome_color" value="#7c3aed" onchange="dirty()" style="height:40px;cursor:pointer"></div>
+        </div>
+        <div class="form-group"><label>Titre</label><input class="fc" id="welcome_title" placeholder="Bienvenue !" onchange="dirty()"></div>
+        <div class="form-group"><label>Message <small style="color:var(--p)">{user} {username} {server} {count}</small></label><textarea class="fc" id="welcome_message" onchange="dirty()"></textarea></div>
+        <hr class="divider">
+        <div class="tr"><span>📩 Message privé (DM)</span><label class="toggle"><input type="checkbox" id="welcome_dm" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="form-group"><label>Message DM</label><textarea class="fc" id="welcome_dm_msg" rows="2" onchange="dirty()"></textarea></div>
+        <hr class="divider">
+        <div class="tr"><span>👋 Message d'au revoir</span><label class="toggle"><input type="checkbox" id="goodbye_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="form-row">
+          <div class="form-group"><label>Salon au revoir</label><select class="fc" id="goodbye_channel" onchange="dirty()"><option value="">Aucun</option></select></div>
+          <div class="form-group"><label>Message au revoir</label><input class="fc" id="goodbye_message" placeholder="Au revoir {user} !" onchange="dirty()"></div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="saveSection('welcome')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- MODÉRATION -->
+  <div class="section" id="s-moderation">
+    <div class="section-title">🛡️ Anti-Raid & Auto-Modération</div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🚨 Anti-Raid</div><label class="toggle"><input type="checkbox" id="ar_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Seuil (membres)</label><input type="number" class="fc" id="ar_threshold" min="2" max="20" onchange="dirty()"></div>
+          <div class="form-group"><label>Fenêtre (secondes)</label><input type="number" class="fc" id="ar_window" min="5" max="60" onchange="dirty()"></div>
+        </div>
+        <div class="form-group"><label>Action</label><select class="fc" id="ar_action" onchange="dirty()"><option value="kick">👢 Expulser</option><option value="ban">🔨 Bannir</option></select></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🤖 Auto-Modération</div><label class="toggle"><input type="checkbox" id="am_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="tr"><span>🔗 Bloquer les liens</span><label class="toggle"><input type="checkbox" id="am_links" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="tr"><span>📨 Bloquer les invitations Discord</span><label class="toggle"><input type="checkbox" id="am_invites" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="tr"><span>🔠 Filtrer les MAJUSCULES</span><label class="toggle"><input type="checkbox" id="am_caps" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="form-group"><label>Seuil avertissements (kick auto)</label><input type="number" class="fc" id="am_warns" min="1" max="10" onchange="dirty()"></div>
+        <div class="form-group">
+          <label>Mots bannis (Entrée pour ajouter)</label>
+          <input class="fc" id="banned_word_input" placeholder="Ajouter un mot..." onkeydown="addBannedWord(event)">
+          <div class="tag-wrap" id="banned_words_list"></div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="saveSection('moderation')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- TICKETS -->
+  <div class="section" id="s-tickets">
+    <div class="section-title">🎫 Tickets avancés</div>
+    <div class="card"><div class="card-body">
+      <div class="form-row">
+        <div class="form-group"><label>Mode</label><select class="fc" id="ticket_mode" onchange="dirty()"><option value="channel">💬 Salon dédié</option><option value="dm">📩 Message privé</option></select></div>
+        <div class="form-group"><label>Max tickets ouverts (gratuit: 5)</label><input type="number" class="fc" id="ticket_max" min="1" max="50" onchange="dirty()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Catégorie Discord</label><select class="fc" id="ticket_cat" onchange="dirty()"><option value="">Aucune</option></select></div>
+        <div class="form-group"><label>Rôle Staff</label><select class="fc" id="ticket_staff" onchange="dirty()"><option value="">Aucun</option></select></div>
+      </div>
+      <div class="form-group"><label>Salon logs tickets</label><select class="fc" id="ticket_log" onchange="dirty()"><option value="">Désactivé</option></select></div>
+      <div class="form-group"><label>Message de fermeture</label><input class="fc" id="ticket_close_msg" placeholder="Ticket fermé. Merci !" onchange="dirty()"></div>
+      <div class="tr"><span>📄 Transcriptions (Premium)</span><label class="toggle"><input type="checkbox" id="ticket_transcripts" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="tr"><span>🎯 Priorité des tickets (Premium)</span><label class="toggle"><input type="checkbox" id="ticket_priority" onchange="dirty()"><span class="sl"></span></label></div>
+    </div></div>
+    <button class="btn btn-p" onclick="saveSection('tickets')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- XP -->
+  <div class="section" id="s-xp">
+    <div class="section-title">📈 XP & Niveaux</div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Système XP</div><label class="toggle"><input type="checkbox" id="xp_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Salon annonces level-up</label><select class="fc" id="xp_channel" onchange="dirty()"><option value="">Même salon</option></select></div>
+          <div class="form-group"><label>Multiplicateur XP</label><input type="number" class="fc" id="xp_mult" min="0.5" max="5" step="0.5" onchange="dirty()"></div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="saveSection('xp')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- ÉCONOMIE -->
+  <div class="section" id="s-economy">
+    <div class="section-title">💰 Économie</div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Système d'économie</div><label class="toggle"><input type="checkbox" id="eco_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Nom de la monnaie</label><input class="fc" id="eco_name" placeholder="pièces" onchange="dirty()"></div>
+          <div class="form-group"><label>Émoji</label><input class="fc" id="eco_emoji" placeholder="🪙" maxlength="2" onchange="dirty()"></div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="saveSection('economy')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- AUTO-RÔLES -->
+  <div class="section" id="s-autoroles">
+    <div class="section-title">🎭 Auto-Rôles</div>
+    <div class="card"><div class="card-body">
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:.5rem">Rôles donnés automatiquement aux nouveaux membres.</p>
+      <div style="display:flex;gap:.5rem">
+        <select class="fc" id="autorole_select" style="flex:1"><option value="">Choisir un rôle...</option></select>
+        <button class="btn btn-p btn-sm" onclick="addAutorole()">+ Ajouter</button>
+      </div>
+      <div class="tag-wrap" id="autoroles_list"></div>
+    </div></div>
+    <button class="btn btn-p" onclick="saveSection('autoroles')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- NOTIFICATIONS SOCIALES -->
+  <div class="section" id="s-notifs">
+    <div class="section-title">🔔 Notifications sociales</div>
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:1.2rem">Configure les notifications YouTube, Twitch, TikTok et Instagram directement dans ton Discord.</p>
+
+    <!-- YouTube -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">🎬 YouTube</div><label class="toggle"><input type="checkbox" id="yt_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Nom/ID de chaîne YouTube</label><input class="fc" id="yt_channel" placeholder="@MaChaineYoutube" onchange="dirty()"></div>
+          <div class="form-group"><label>Salon Discord de notification</label><select class="fc" id="yt_discord_channel" onchange="dirty()"><option value="">Choisir un salon...</option></select></div>
+        </div>
+        <div class="form-group"><label>Message <small style="color:var(--p)">{channel} {title} {url}</small></label><input class="fc" id="yt_message" placeholder="🎬 Nouvelle vidéo de {channel} !" onchange="dirty()"></div>
+        <div class="form-group"><label>Rôle à mentionner</label><select class="fc" id="yt_role" onchange="dirty()"><option value="">Aucun</option></select></div>
+        <div class="tr"><span>📹 Notifier les vidéos</span><label class="toggle"><input type="checkbox" id="yt_video" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="tr"><span>🔴 Notifier les lives</span><label class="toggle"><input type="checkbox" id="yt_live" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="tr"><span>📱 Notifier les Shorts</span><label class="toggle"><input type="checkbox" id="yt_short" onchange="dirty()"><span class="sl"></span></label></div>
+      </div>
+    </div>
+
+    <!-- Twitch -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">🟣 Twitch</div><label class="toggle"><input type="checkbox" id="tw_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Nom d'utilisateur Twitch</label><input class="fc" id="tw_username" placeholder="keyshinotv" onchange="dirty()"></div>
+          <div class="form-group"><label>Salon Discord</label><select class="fc" id="tw_discord_channel" onchange="dirty()"><option value="">Choisir un salon...</option></select></div>
+        </div>
+        <div class="form-group"><label>Message <small style="color:var(--p)">{streamer} {game} {viewers} {url}</small></label><input class="fc" id="tw_message" placeholder="🔴 {streamer} est en live !" onchange="dirty()"></div>
+        <div class="form-group"><label>Rôle à mentionner</label><select class="fc" id="tw_role" onchange="dirty()"><option value="">Aucun</option></select></div>
+        <div class="tr"><span>🎮 Afficher le jeu</span><label class="toggle"><input type="checkbox" id="tw_game" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="tr"><span>👀 Afficher les viewers</span><label class="toggle"><input type="checkbox" id="tw_viewers" onchange="dirty()"><span class="sl"></span></label></div>
+      </div>
+    </div>
+
+    <!-- TikTok -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">🎵 TikTok</div><label class="toggle"><input type="checkbox" id="tt_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Nom d'utilisateur TikTok</label><input class="fc" id="tt_username" placeholder="@moncompte" onchange="dirty()"></div>
+          <div class="form-group"><label>Salon Discord</label><select class="fc" id="tt_discord_channel" onchange="dirty()"><option value="">Choisir un salon...</option></select></div>
+        </div>
+        <div class="form-group"><label>Message <small style="color:var(--p)">{user} {url}</small></label><input class="fc" id="tt_message" placeholder="🎵 {user} a posté une vidéo TikTok !" onchange="dirty()"></div>
+        <div class="form-group"><label>Rôle à mentionner</label><select class="fc" id="tt_role" onchange="dirty()"><option value="">Aucun</option></select></div>
+        <div class="tr"><span>📹 Notifier les vidéos</span><label class="toggle"><input type="checkbox" id="tt_video" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="tr"><span>🔴 Notifier les lives</span><label class="toggle"><input type="checkbox" id="tt_live" onchange="dirty()"><span class="sl"></span></label></div>
+      </div>
+    </div>
+
+    <!-- Instagram -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">📸 Instagram</div><label class="toggle"><input type="checkbox" id="ig_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Nom d'utilisateur Instagram</label><input class="fc" id="ig_username" placeholder="@moncompte" onchange="dirty()"></div>
+          <div class="form-group"><label>Salon Discord</label><select class="fc" id="ig_discord_channel" onchange="dirty()"><option value="">Choisir un salon...</option></select></div>
+        </div>
+        <div class="form-group"><label>Message</label><input class="fc" id="ig_message" placeholder="📸 {user} a posté sur Instagram !" onchange="dirty()"></div>
+        <div class="form-group"><label>Rôle à mentionner</label><select class="fc" id="ig_role" onchange="dirty()"><option value="">Aucun</option></select></div>
+        <div class="tr"><span>📷 Posts</span><label class="toggle"><input type="checkbox" id="ig_post" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="tr"><span>🎬 Reels</span><label class="toggle"><input type="checkbox" id="ig_reel" onchange="dirty()"><span class="sl"></span></label></div>
+        <div class="tr"><span>📖 Stories</span><label class="toggle"><input type="checkbox" id="ig_story" onchange="dirty()"><span class="sl"></span></label></div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="saveSection('notifs')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- EMBEDS -->
+  <div class="section" id="s-embed">
+    <div class="section-title">📝 Envoyer un Embed</div>
+    <div class="card"><div class="card-body">
+      <div class="form-row">
+        <div class="form-group"><label>Salon de destination</label><select class="fc" id="embed_channel"><option value="">Choisir un salon...</option></select></div>
+        <div class="form-group"><label>Couleur</label><input type="color" class="fc" id="embed_color" value="#7c3aed" style="height:40px;cursor:pointer"></div>
+      </div>
+      <div class="form-group"><label>Titre</label><input class="fc" id="embed_title" placeholder="Titre de l'embed"></div>
+      <div class="form-group"><label>Description</label><textarea class="fc" id="embed_desc" placeholder="Contenu de l'embed..."></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Image URL (optionnel)</label><input class="fc" id="embed_image" placeholder="https://..."></div>
+        <div class="form-group"><label>Miniature URL (optionnel)</label><input class="fc" id="embed_thumbnail" placeholder="https://..."></div>
+      </div>
+      <div class="form-group"><label>Footer (optionnel)</label><input class="fc" id="embed_footer" placeholder="Texte en bas de l'embed"></div>
+      <div style="display:flex;gap:.8rem;margin-top:.5rem">
+        <button class="btn btn-p" onclick="sendEmbed()">📤 Envoyer dans Discord</button>
+        <button class="btn btn-sec" onclick="previewEmbed()">👁️ Prévisualiser</button>
+      </div>
+      <div id="embed_preview" style="display:none;margin-top:1rem;background:rgba(0,0,0,.4);border-left:4px solid var(--p);border-radius:0 8px 8px 0;padding:1rem">
+        <div id="ep_title" style="font-weight:700;margin-bottom:.3rem"></div>
+        <div id="ep_desc" style="color:var(--muted);font-size:.9rem;white-space:pre-wrap"></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- STATUT BOT -->
+  <div class="section" id="s-botstatus">
+    <div class="section-title">🟣 Statut du Bot <span style="font-size:.75rem;color:#eab308;background:rgba(234,179,8,.15);padding:.2rem .6rem;border-radius:6px;margin-left:.5rem">⭐ Premium</span></div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Personnaliser le statut</div><label class="toggle"><input type="checkbox" id="bs_enabled" onchange="dirty()"><span class="sl"></span></label></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label>Statut</label>
+            <select class="fc" id="bs_status" onchange="dirty()">
+              <option value="online">🟢 En ligne</option>
+              <option value="idle">🌙 Absent</option>
+              <option value="dnd">⛔ Ne pas déranger</option>
+              <option value="invisible">⚫ Invisible</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Type d'activité</label>
+            <select class="fc" id="bs_activity_type" onchange="dirty()">
+              <option value="PLAYING">🎮 Joue à</option>
+              <option value="WATCHING">👀 Regarde</option>
+              <option value="LISTENING">🎵 Écoute</option>
+              <option value="COMPETING">🏆 En compétition</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label>Texte de l'activité</label><input class="fc" id="bs_text" placeholder="Ex: NKSBOT v1.01" onchange="dirty()"></div>
+      </div>
+    </div>
+    <button class="btn btn-p" onclick="saveSection('botstatus')">💾 Sauvegarder</button>
+  </div>
+
+  <!-- PREMIUM -->
+  <div class="section" id="s-premium">
+    <div class="section-title">⭐ Premium</div>
+    <div class="card"><div class="card-body" id="premiumContent">Chargement...</div></div>
+  </div>
+</main>
+
+<div class="save-bar" id="saveBar">
+  <span>⚠️ Modifications non sauvegardées</span>
+  <button class="btn btn-p btn-sm" onclick="saveCurrentSection()">💾 Sauvegarder</button>
+</div>
+<div id="toast"></div>
+
+<script>
+const guildId = location.pathname.split('/').pop();
+let cfg = {}, channels = [], roles = [], autoroles = [], panelRoles = [], bannedWords = [];
+let currentSection = 'general';
+
+// Navigation
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    item.classList.add('active');
+    currentSection = item.dataset.s;
+    document.getElementById('s-' + currentSection).classList.add('active');
+  });
+});
+
+function dirty() { document.getElementById('saveBar').classList.add('show'); }
+function saveCurrentSection() { saveSection(currentSection); }
+
+function toast(msg, ok=true) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = ok ? 'var(--p)' : '#ED4245';
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+// Populate selects
+function populateChannels() {
+  const textCh = channels.filter(c => c.type === 0);
+  const cats = channels.filter(c => c.type === 4);
+  const textSelects = ['log_membres','log_messages','log_moderation','log_vocal','log_raid','log_commandes',
+    'welcome_channel','goodbye_channel','ticket_log','xp_channel','embed_channel',
+    'yt_discord_channel','tw_discord_channel','tt_discord_channel','ig_discord_channel'];
+  textSelects.forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">Désactivé</option>';
+    textCh.forEach(c => el.appendChild(new Option('#' + c.name, c.id)));
+    if (cur) el.value = cur;
+  });
+  const catSel = document.getElementById('ticket_cat');
+  if (catSel) {
+    const cur = catSel.value;
+    catSel.innerHTML = '<option value="">Aucune</option>';
+    cats.forEach(c => catSel.appendChild(new Option('📁 ' + c.name, c.id)));
+    textCh.forEach(c => catSel.appendChild(new Option('#' + c.name, c.id)));
+    if (cur) catSel.value = cur;
+  }
+}
+function populateRoles() {
+  const roleSelects = ['ticket_staff','autorole_select','panelRoleSelect',
+    'yt_role','tw_role','tt_role','ig_role'];
+  roleSelects.forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">Aucun</option>';
+    roles.forEach(r => el.appendChild(new Option('@' + r.name, r.id)));
+    if (cur) el.value = cur;
+  });
+}
+
+// Load config
+async function load() {
+  const [c, ch, rl] = await Promise.all([
+    fetch('/api/guild/' + guildId).then(r=>r.json()),
+    fetch('/api/guild/' + guildId + '/channels').then(r=>r.json()),
+    fetch('/api/guild/' + guildId + '/roles').then(r=>r.json()),
+  ]);
+  cfg = c; channels = ch; roles = rl;
+  autoroles = cfg.autoroles || [];
+  panelRoles = cfg.panelRoles || [];
+  bannedWords = cfg.autoMod?.bannedWords || [];
+  populateChannels(); populateRoles();
+  applyConfig();
+}
+
+function sv(id, val, type) {
+  const el = document.getElementById(id); if (!el) return;
+  if (type === 'check') el.checked = !!val;
+  else el.value = val || '';
+}
+
+function applyConfig() {
+  const c = cfg;
+  document.getElementById('gName').textContent = c.guildName || guildId;
+
+  // Général
+  document.getElementById('genInfo').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:.7rem">
+      <div><strong>ID du serveur</strong><br><code style="color:var(--pl)">${guildId}</code></div>
+      <div><strong>Plan</strong><br>${c.premium ? '<span style="color:#eab308">⭐ Premium actif</span>' : '🔓 Gratuit'}</div>
+      <div><strong>Préfixe</strong><br><code>${c.prefix || '!'}</code></div>
+    </div>`;
+
+  // Prefix
+  sv('prefix', c.prefix || '!');
+  renderPanelRoles(); renderAutoroles();
+
+  // Logs
+  sv('log_membres', c.logs?.membres); sv('log_messages', c.logs?.messages);
+  sv('log_moderation', c.logs?.moderation); sv('log_vocal', c.logs?.vocal);
+  sv('log_raid', c.logs?.raid); sv('log_commandes', c.logs?.commandes);
+
+  // Welcome
+  sv('welcome_enabled', c.welcome?.enabled, 'check');
+  sv('welcome_channel', c.welcome?.channelId); sv('welcome_color', c.welcome?.color || '#7c3aed');
+  sv('welcome_title', c.welcome?.title); sv('welcome_message', c.welcome?.message);
+  sv('welcome_dm', c.welcome?.dmEnabled, 'check'); sv('welcome_dm_msg', c.welcome?.dmMessage);
+  sv('goodbye_enabled', c.welcome?.goodbyeEnabled, 'check');
+  sv('goodbye_channel', c.welcome?.goodbyeChannelId); sv('goodbye_message', c.welcome?.goodbyeMessage);
+
+  // Anti-raid
+  sv('ar_enabled', c.antiRaid?.enabled !== false, 'check');
+  sv('ar_threshold', c.antiRaid?.joinThreshold || 5); sv('ar_window', c.antiRaid?.joinTimeWindow || 10);
+  sv('ar_action', c.antiRaid?.action || 'kick');
+
+  // AutoMod
+  sv('am_enabled', c.autoMod?.enabled, 'check'); sv('am_links', c.autoMod?.filterLinks, 'check');
+  sv('am_invites', c.autoMod?.filterInvites !== false, 'check'); sv('am_caps', c.autoMod?.filterCaps, 'check');
+  sv('am_warns', c.autoMod?.warnThreshold || 3);
+  renderBannedWords();
+
+  // Tickets
+  sv('ticket_mode', c.tickets?.mode || 'channel'); sv('ticket_max', c.tickets?.maxOpen || 5);
+  sv('ticket_cat', c.tickets?.categoryId); sv('ticket_staff', c.tickets?.staffRoleId);
+  sv('ticket_log', c.tickets?.logChannelId); sv('ticket_close_msg', c.tickets?.closeMessage);
+  sv('ticket_transcripts', c.tickets?.transcriptsEnabled, 'check');
+  sv('ticket_priority', c.tickets?.priorityEnabled, 'check');
+
+  // XP
+  sv('xp_enabled', c.xp?.enabled !== false, 'check');
+  sv('xp_channel', c.xp?.announceChannel); sv('xp_mult', c.xp?.multiplier || 1);
+
+  // Economy
+  sv('eco_enabled', c.economy?.enabled, 'check');
+  sv('eco_name', c.economy?.currencyName || 'pièces');
+  sv('eco_emoji', c.economy?.currencyEmoji || '🪙');
+
+  // Notifs YouTube
+  const yt = c.socialNotifs?.youtube || {};
+  sv('yt_enabled', yt.enabled, 'check'); sv('yt_channel', yt.channelId);
+  sv('yt_discord_channel', yt.discordChannelId); sv('yt_message', yt.message);
+  sv('yt_role', yt.pingRole); sv('yt_video', yt.notifyVideo !== false, 'check');
+  sv('yt_live', yt.notifyLive !== false, 'check'); sv('yt_short', yt.notifyShort !== false, 'check');
+
+  // Twitch
+  const tw = c.socialNotifs?.twitch || {};
+  sv('tw_enabled', tw.enabled, 'check'); sv('tw_username', tw.username);
+  sv('tw_discord_channel', tw.discordChannelId); sv('tw_message', tw.message);
+  sv('tw_role', tw.pingRole); sv('tw_game', tw.showGame !== false, 'check');
+  sv('tw_viewers', tw.showViewers !== false, 'check');
+
+  // TikTok
+  const tt = c.socialNotifs?.tiktok || {};
+  sv('tt_enabled', tt.enabled, 'check'); sv('tt_username', tt.username);
+  sv('tt_discord_channel', tt.discordChannelId); sv('tt_message', tt.message);
+  sv('tt_role', tt.pingRole); sv('tt_video', tt.notifyVideo !== false, 'check');
+  sv('tt_live', tt.notifyLive, 'check');
+
+  // Instagram
+  const ig = c.socialNotifs?.instagram || {};
+  sv('ig_enabled', ig.enabled, 'check'); sv('ig_username', ig.username);
+  sv('ig_discord_channel', ig.discordChannelId); sv('ig_message', ig.message);
+  sv('ig_role', ig.pingRole); sv('ig_post', ig.notifyPost !== false, 'check');
+  sv('ig_reel', ig.notifyReel !== false, 'check'); sv('ig_story', ig.notifyStory, 'check');
+
+  // Bot status
+  sv('bs_enabled', c.botStatus?.enabled, 'check');
+  sv('bs_status', c.botStatus?.status || 'online');
+  sv('bs_activity_type', c.botStatus?.activityType || 'PLAYING');
+  sv('bs_text', c.botStatus?.activityText);
+
+  // Premium
+  loadPremium(c);
+}
+
+function loadPremium(c) {
+  const el = document.getElementById('premiumContent');
+  if (c.premium) {
+    el.innerHTML = `<div style="text-align:center;padding:1rem">
+      <div style="font-size:2.5rem;margin-bottom:.5rem">⭐</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800">Premium Actif</div>
+      <div style="color:var(--muted);margin-top:.3rem">Expire le ${c.premiumExpires ? new Date(c.premiumExpires).toLocaleDateString('fr-FR') : 'N/A'}</div>
+    </div>`;
+  } else {
+    el.innerHTML = `<div style="text-align:center;padding:1.5rem">
+      <div style="font-size:3rem;margin-bottom:1rem">⭐</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800">Passer Premium</div>
+      <div style="color:var(--muted);margin:.5rem 0 1.5rem">1,99€/mois — Tickets illimités, statut bot, logs avancés, 500 crédits IA...</div>
+      <div style="display:flex;flex-direction:column;gap:.8rem;max-width:300px;margin:0 auto">
+        <a href="https://paypal.me/AmoungTerrorBoutique/1.99EUR" target="_blank" style="display:block;background:var(--p);color:white;padding:.9rem;border-radius:10px;text-decoration:none;font-weight:600">💳 PayPal — 1,99€</a>
+        <a href="https://discord.gg/btuk38RknU" target="_blank" style="color:var(--pl);font-size:.9rem">💬 Contacter sur Discord</a>
+      </div>
+    </div>`;
+  }
+}
+
+// Tag systems
+function renderBannedWords() {
+  document.getElementById('banned_words_list').innerHTML = bannedWords.map(w =>
+    `<span class="tag">${w}<span class="tag-x" onclick="removeBannedWord('${w}')">×</span></span>`
+  ).join('');
+}
+function addBannedWord(e) {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const val = e.target.value.trim();
+  if (!val || bannedWords.includes(val)) return;
+  bannedWords.push(val); e.target.value = ''; renderBannedWords(); dirty();
+}
+function removeBannedWord(w) { bannedWords = bannedWords.filter(x=>x!==w); renderBannedWords(); dirty(); }
+
+function renderAutoroles() {
+  document.getElementById('autoroles_list').innerHTML = autoroles.map(id => {
+    const r = roles.find(x => x.id === id);
+    return `<span class="tag">@${r ? r.name : id}<span class="tag-x" onclick="removeAutorole('${id}')">×</span></span>`;
+  }).join('');
+}
+function addAutorole() {
+  const id = document.getElementById('autorole_select').value;
+  if (!id || autoroles.includes(id)) return;
+  autoroles.push(id); renderAutoroles(); dirty();
+}
+function removeAutorole(id) { autoroles = autoroles.filter(x=>x!==id); renderAutoroles(); dirty(); }
+
+function renderPanelRoles() {
+  document.getElementById('panelRoleList').innerHTML = panelRoles.map(id => {
+    const r = roles.find(x => x.id === id);
+    return `<span class="tag">@${r ? r.name : id}<span class="tag-x" onclick="removePanelRole('${id}')">×</span></span>`;
+  }).join('');
+}
+function addPanelRole() {
+  const id = document.getElementById('panelRoleSelect').value;
+  if (!id || panelRoles.includes(id)) return;
+  panelRoles.push(id); renderPanelRoles(); dirty();
+}
+function removePanelRole(id) { panelRoles = panelRoles.filter(x=>x!==id); renderPanelRoles(); dirty(); }
+
+// Save sections
+async function saveSection(section) {
+  let body = {};
+  if (section === 'prefix') {
+    body = { prefix: document.getElementById('prefix').value, panelRoles };
+  } else if (section === 'logs') {
+    body = { logs: { membres: gv('log_membres'), messages: gv('log_messages'), moderation: gv('log_moderation'), vocal: gv('log_vocal'), raid: gv('log_raid'), commandes: gv('log_commandes') } };
+  } else if (section === 'welcome') {
+    body = { welcome: { enabled: gc('welcome_enabled'), channelId: gv('welcome_channel'), color: gv('welcome_color'), title: gv('welcome_title'), message: gv('welcome_message'), dmEnabled: gc('welcome_dm'), dmMessage: gv('welcome_dm_msg'), goodbyeEnabled: gc('goodbye_enabled'), goodbyeChannelId: gv('goodbye_channel'), goodbyeMessage: gv('goodbye_message') } };
+  } else if (section === 'moderation') {
+    body = {
+      antiRaid: { enabled: gc('ar_enabled'), joinThreshold: parseInt(gv('ar_threshold')), joinTimeWindow: parseInt(gv('ar_window')), action: gv('ar_action') },
+      autoMod: { enabled: gc('am_enabled'), filterLinks: gc('am_links'), filterInvites: gc('am_invites'), filterCaps: gc('am_caps'), warnThreshold: parseInt(gv('am_warns')), bannedWords }
+    };
+  } else if (section === 'tickets') {
+    body = { tickets: { mode: gv('ticket_mode'), maxOpen: parseInt(gv('ticket_max')), categoryId: gv('ticket_cat'), staffRoleId: gv('ticket_staff'), logChannelId: gv('ticket_log'), closeMessage: gv('ticket_close_msg'), transcriptsEnabled: gc('ticket_transcripts'), priorityEnabled: gc('ticket_priority') } };
+  } else if (section === 'xp') {
+    body = { xp: { enabled: gc('xp_enabled'), announceChannel: gv('xp_channel'), multiplier: parseFloat(gv('xp_mult')) } };
+  } else if (section === 'economy') {
+    body = { economy: { enabled: gc('eco_enabled'), currencyName: gv('eco_name'), currencyEmoji: gv('eco_emoji') } };
+  } else if (section === 'autoroles') {
+    body = { autoroles };
+  } else if (section === 'notifs') {
+    body = { socialNotifs: {
+      youtube: { enabled: gc('yt_enabled'), channelId: gv('yt_channel'), discordChannelId: gv('yt_discord_channel'), message: gv('yt_message'), pingRole: gv('yt_role'), notifyVideo: gc('yt_video'), notifyLive: gc('yt_live'), notifyShort: gc('yt_short') },
+      twitch: { enabled: gc('tw_enabled'), username: gv('tw_username'), discordChannelId: gv('tw_discord_channel'), message: gv('tw_message'), pingRole: gv('tw_role'), showGame: gc('tw_game'), showViewers: gc('tw_viewers') },
+      tiktok: { enabled: gc('tt_enabled'), username: gv('tt_username'), discordChannelId: gv('tt_discord_channel'), message: gv('tt_message'), pingRole: gv('tt_role'), notifyVideo: gc('tt_video'), notifyLive: gc('tt_live') },
+      instagram: { enabled: gc('ig_enabled'), username: gv('ig_username'), discordChannelId: gv('ig_discord_channel'), message: gv('ig_message'), pingRole: gv('ig_role'), notifyPost: gc('ig_post'), notifyReel: gc('ig_reel'), notifyStory: gc('ig_story') },
+    }};
+  } else if (section === 'botstatus') {
+    body = { botStatus: { enabled: gc('bs_enabled'), status: gv('bs_status'), activityType: gv('bs_activity_type'), activityText: gv('bs_text') } };
+  } else if (section === 'general') { return; }
+
+  const res = await fetch('/api/guild/' + guildId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r=>r.json());
+  if (res.success) { toast('✅ Sauvegardé !'); document.getElementById('saveBar').classList.remove('show'); }
+  else toast('❌ ' + (res.error || 'Erreur'), false);
+}
+
+function gv(id) { return document.getElementById(id)?.value || ''; }
+function gc(id) { return document.getElementById(id)?.checked || false; }
+
+// Embed
+function previewEmbed() {
+  const preview = document.getElementById('embed_preview');
+  document.getElementById('ep_title').textContent = gv('embed_title');
+  document.getElementById('ep_desc').textContent = gv('embed_desc');
+  const color = gv('embed_color');
+  preview.style.borderLeftColor = color;
+  preview.style.display = 'block';
+}
+async function sendEmbed() {
+  const channelId = gv('embed_channel');
+  if (!channelId) return toast('❌ Choisis un salon', false);
+  const embed = { title: gv('embed_title'), description: gv('embed_desc'), color: parseInt(gv('embed_color').replace('#',''), 16) };
+  if (gv('embed_image')) embed.image = { url: gv('embed_image') };
+  if (gv('embed_thumbnail')) embed.thumbnail = { url: gv('embed_thumbnail') };
+  if (gv('embed_footer')) embed.footer = { text: gv('embed_footer') };
+  const res = await fetch('/api/guild/' + guildId + '/send-embed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channelId, embed }) }).then(r=>r.json());
+  if (res.success) toast('✅ Embed envoyé !');
+  else toast('❌ ' + (res.error || 'Erreur'), false);
+}
+
+load();
+</script>
+</body>
+</html>
