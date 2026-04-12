@@ -607,7 +607,14 @@ app.get('/api/bot/social-notifs', async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════════════════
+// Route racine — redirige vers dashboard ou login
+app.get('/', (req, res) => {
+  if (req.session.user) return res.redirect('/dashboard');
+  res.redirect('/login');
+});
+
 app.listen(PORT, () => {
   console.log(`🌐 Dashboard NKSBOT v1.01 sur http://localhost:${PORT}`);
   console.log(`👑 Owner ID: ${process.env.OWNER_DISCORD_ID || '⚠️ Non défini dans .env'}`);
 });
+
