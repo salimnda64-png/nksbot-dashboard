@@ -7,6 +7,7 @@ const axios = require('axios');
 const path = require('path');
 
 const app = express();
+app.set('trust proxy', 1); // Nécessaire pour HTTPS sur Render
 const PORT = process.env.PORT || 10000;
 
 // ================================================================
@@ -72,7 +73,7 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: true, // Render utilise HTTPS
   },
 }));
 
