@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NKSBOT — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav class="navbar">
+  <div class="logo">NKSBOT</div>
+  <div class="nav-right">
+    <div id="userInfo" class="user-info"></div>
+    <a href="/auth/logout" class="btn-logout">Déconnexion</a>
+  </div>
+</nav>
+<main class="container" style="padding-top:6rem">
+  <div class="page-header">
+    <h1>Mes serveurs</h1>
+    <p>Sélectionne un serveur pour le configurer</p>
+  </div>
+  <div id="guildsGrid" class="guilds-grid"><div class="loading">Chargement...</div></div>
+</main>
+<script>
+const BOT_CLIENT_ID = '1492591833795264642';
+async function load() {
+  const [me, guilds] = await Promise.all([fetch('/api/me').then(r=>r.json()), fetch('/api/guilds').then(r=>r.json())]);
+  const avatar = me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png` : 'https://cdn.discordapp.com/embed/avatars/0.png';
+  document.getElementById('userInfo').innerHTML = `<img src="${avatar}" class="avatar"><span>${me.username}</span>`;
+  const grid = document.getElementById('guildsGrid');
+  if (!guilds.length) { grid.innerHTML = '<div class="empty">Aucun serveur trouvé.</div>'; return; }
+  grid.innerHTML = guilds.map(g => {
+    const icon = g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : 'https://cdn.discordapp.com/embed/avatars/0.png';
+    const badge = g.premium ? '<span class="badge-premium">⭐ Premium</span>' : '';
+    const btn = g.botPresent
+      ? `<a href="/dashboard/${g.id}" class="btn-config">⚙️ Configurer</a>`
+      : `<a href="https://discord.com/oauth2/authorize?client_id=${BOT_CLIENT_ID}&permissions=8&scope=bot%20applications.commands&guild_id=${g.id}" target="_blank" class="btn-add">➕ Ajouter</a>`;
+    return `<div class="guild-card"><img src="${icon}" class="guild-icon"><div class="guild-info"><div class="guild-name">${g.name} ${badge}</div><div class="guild-id">ID: ${g.id}</div></div>${btn}</div>`;
+  }).join('');
+}
+load();
+</script>
+</body>
+</html>
