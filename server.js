@@ -33,6 +33,11 @@ function requireAuth(req, res, next) {
   res.redirect('/login');
 }
 
+function requireOwner(req, res, next) {
+  if (req.session.user?.id === process.env.OWNER_DISCORD_ID) return next();
+  res.status(403).json({ error: 'Non autorisé' });
+}
+
 async function requireAdmin(req, res, next) {
   const guild = req.session.user?.guilds?.find(g => g.id === req.params.guildId);
   if (guild && ((guild.permissions & 0x8) === 0x8 || guild.owner)) return next();
@@ -41,6 +46,28 @@ async function requireAdmin(req, res, next) {
 
 const CALLBACK_URL = process.env.DISCORD_CALLBACK_URL || `http://localhost:${PORT}/auth/callback`;
 
+// ── Schémas Mongoose ──────────────────────────────────────────────
+const GuildSchema = new mongoose.Schema({}, { strict: false });
+const PaymentLogSchema = new mongoose.Schema({
+  guildId:    String,
+  guildName:  String,
+  userId:     String,
+  username:   String,
+  method:     String,
+  amount:     Number,
+  note:       String,
+  expiresAt:  Date,
+  createdAt:  { type: Date, default: Date.now },
+});
+
+function getGuild() {
+  return mongoose.models.Guild || mongoose.model('Guild', GuildSchema);
+}
+function getPaymentLog() {
+  return mongoose.models.PaymentLog || mongoose.model('PaymentLog', PaymentLogSchema);
+}
+
+// ── Auth ──────────────────────────────────────────────────────────
 app.get('/auth/discord', (req, res) => {
   const params = new URLSearchParams({
     client_id: process.env.DISCORD_CLIENT_ID,
@@ -86,6 +113,7 @@ app.get('/auth/callback', async (req, res) => {
 
 app.get('/auth/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
+// ── Pages ─────────────────────────────────────────────────────────
 app.get('/', (req, res) => res.redirect('/login'));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 app.get('/dashboard', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
@@ -95,6 +123,7 @@ app.get('/admin', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
+// ── API utilisateur ───────────────────────────────────────────────
 app.get('/api/me', requireAuth, (req, res) => {
   const u = req.session.user;
   res.json({ id: u.id, username: u.username, avatar: u.avatar, guilds: u.guilds, isOwner: u.id === process.env.OWNER_DISCORD_ID });
@@ -102,12 +131,22 @@ app.get('/api/me', requireAuth, (req, res) => {
 
 app.get('/api/guilds', requireAuth, async (req, res) => {
   try {
-    const Guild = mongoose.models.Guild;
+    const Guild = getGuild();
     const adminGuilds = req.session.user.guilds.filter(g => (g.permissions & 0x8) === 0x8 || g.owner);
-    const dbGuilds = Guild ? await Guild.find({ guildId: { $in: adminGuilds.map(g => g.id) } }) : [];
+    const dbGuilds = await Guild.find({ guildId: { $in: adminGuilds.map(g => g.id) } });
+
+    // ✅ Fix botPresent : vérifie aussi via l'API Discord Bot
+    let botGuildIds = new Set(dbGuilds.map(db => db.guildId));
+    try {
+      const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
+        headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN }
+      });
+      botGuilds.data.forEach(g => botGuildIds.add(g.id));
+    } catch {}
+
     res.json(adminGuilds.map(g => ({
       ...g,
-      botPresent: dbGuilds.some(db => db.guildId === g.id),
+      botPresent: botGuildIds.has(g.id),
       premium: dbGuilds.find(db => db.guildId === g.id)?.premium || false,
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -115,7 +154,7 @@ app.get('/api/guilds', requireAuth, async (req, res) => {
 
 app.get('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    const Guild = getGuild();
     let guild = await Guild.findOne({ guildId: req.params.guildId });
     if (!guild) guild = { guildId: req.params.guildId };
     res.json(guild);
@@ -124,7 +163,7 @@ app.get('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
 
 app.post('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    const Guild = getGuild();
     await Guild.findOneAndUpdate({ guildId: req.params.guildId }, { ...req.body, updatedAt: new Date() }, { upsert: true });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -144,33 +183,95 @@ app.get('/api/guild/:guildId/roles', requireAuth, requireAdmin, async (req, res)
   } catch { res.status(500).json({ error: 'Erreur roles' }); }
 });
 
-// ── Admin — Premium ───────────────────────────────────────────────
-app.post('/api/admin/premium/activate', requireAuth, async (req, res) => {
-  if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.status(403).json({ error: 'Non autorisé' });
+// ── API Admin — Stats ─────────────────────────────────────────────
+app.get('/api/admin/stats', requireAuth, requireOwner, async (req, res) => {
   try {
-    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
-    const { guildId, days } = req.body;
-    const expires = new Date(Date.now() + (days || 30) * 24 * 60 * 60 * 1000);
-    await Guild.findOneAndUpdate({ guildId }, { premium: true, premiumExpires: expires }, { upsert: true });
-    res.json({ success: true });
+    const Guild = getGuild();
+    const PaymentLog = getPaymentLog();
+    const allGuilds = await Guild.find({});
+    const premiumGuilds = allGuilds.filter(g => g.premium && g.premiumExpires > new Date());
+    const logs = await PaymentLog.find({}).sort({ createdAt: -1 }).limit(10);
+    const totalRevenue = await PaymentLog.aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]);
+    res.json({
+      totalGuilds: allGuilds.length,
+      premiumGuilds: premiumGuilds.length,
+      totalRevenue: totalRevenue[0]?.total || 0,
+      recentActivations: logs,
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/admin/premium/revoke', requireAuth, async (req, res) => {
-  if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.status(403).json({ error: 'Non autorisé' });
+// ── API Admin — Premium (GET liste) ──────────────────────────────
+app.get('/api/admin/premium', requireAuth, requireOwner, async (req, res) => {
   try {
-    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    const Guild = getGuild();
+    const PaymentLog = getPaymentLog();
+    const guilds = await Guild.find({ premium: true }).sort({ premiumExpires: 1 });
+    const logs = await PaymentLog.find({}).sort({ createdAt: -1 });
+    res.json({ guilds, logs });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── API Admin — Premium Activer ───────────────────────────────────
+app.post('/api/admin/premium/activate', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const Guild = getGuild();
+    const PaymentLog = getPaymentLog();
+    const { guildId, guildName, userId, username, days, method, amount, note } = req.body;
+    if (!guildId) return res.status(400).json({ error: 'Guild ID requis' });
+    const expires = new Date(Date.now() + (days || 30) * 24 * 60 * 60 * 1000);
+    await Guild.findOneAndUpdate(
+      { guildId },
+      { premium: true, premiumExpires: expires, guildName: guildName || undefined, premiumNote: note || undefined },
+      { upsert: true }
+    );
+    await PaymentLog.create({ guildId, guildName, userId, username, method, amount, note, expiresAt: expires });
+    res.json({ success: true, expiresAt: expires });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── API Admin — Premium Révoquer ──────────────────────────────────
+app.post('/api/admin/premium/revoke', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const Guild = getGuild();
     // ✅ Fix : { guildId: req.body.guildId } au lieu de { req.body.guildId }
     await Guild.findOneAndUpdate({ guildId: req.body.guildId }, { premium: false, premiumExpires: null });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── Mémoire IA (Premium) ──────────────────────────────────────────
+// ── API Admin — Tous les serveurs ─────────────────────────────────
+app.get('/api/admin/guilds', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const Guild = getGuild();
+    const guilds = await Guild.find({}).sort({ updatedAt: -1 });
+    res.json(guilds);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── API Admin — Recherche utilisateur ────────────────────────────
+app.get('/api/admin/search-user', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const PaymentLog = getPaymentLog();
+    const q = req.query.q?.trim();
+    if (!q) return res.json({ logs: [] });
+    const logs = await PaymentLog.find({
+      $or: [
+        { guildId: q },
+        { userId: q },
+        { username: { $regex: q, $options: 'i' } },
+        { guildName: { $regex: q, $options: 'i' } },
+      ]
+    }).sort({ createdAt: -1 });
+    res.json({ logs });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── API — Mémoire IA (Premium) ────────────────────────────────────
 app.get('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
-    const guild = await Guild.findOne({ guildId: req.params.guildId }).select('aiMemory premium premiumExpires');
+    const Guild = getGuild();
+    const guild = await Guild.findOne({ guildId: req.params.guildId });
     const isPremium = guild?.premium && guild?.premiumExpires > new Date();
     if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
     res.json({ memory: guild?.aiMemory || [] });
@@ -179,24 +280,22 @@ app.get('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req, 
 
 app.post('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
-    const guild = await Guild.findOne({ guildId: req.params.guildId }).select('premium premiumExpires aiMemory');
+    const Guild = getGuild();
+    const guild = await Guild.findOne({ guildId: req.params.guildId });
     const isPremium = guild?.premium && guild?.premiumExpires > new Date();
     if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
     const { action, fact, index } = req.body;
     if (action === 'add') {
-      if (!fact || typeof fact !== 'string') return res.status(400).json({ error: 'Fait invalide' });
-      if ((guild.aiMemory || []).length >= 20) return res.status(400).json({ error: 'Limite de 20 faits atteinte' });
+      if (!fact) return res.status(400).json({ error: 'Fait invalide' });
+      if ((guild.aiMemory || []).length >= 20) return res.status(400).json({ error: 'Limite 20 faits atteinte' });
       await Guild.updateOne({ guildId: req.params.guildId }, { $push: { aiMemory: fact.trim() } });
     } else if (action === 'remove') {
       const idx = parseInt(index);
-      if (isNaN(idx) || idx < 0 || idx >= (guild.aiMemory || []).length) return res.status(400).json({ error: 'Index invalide' });
+      if (isNaN(idx)) return res.status(400).json({ error: 'Index invalide' });
       guild.aiMemory.splice(idx, 1);
       await Guild.updateOne({ guildId: req.params.guildId }, { $set: { aiMemory: guild.aiMemory } });
     } else if (action === 'reset') {
       await Guild.updateOne({ guildId: req.params.guildId }, { $set: { aiMemory: [] } });
-    } else {
-      return res.status(400).json({ error: 'Action invalide' });
     }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
