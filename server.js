@@ -9,14 +9,70 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ================================================================
+//  SÉCURITÉ — Headers HTTP
+// ================================================================
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.removeHeader('X-Powered-By');
+  next();
+});
+
+// ================================================================
+//  SÉCURITÉ — Rate Limiting maison (sans dépendance)
+// ================================================================
+const rateLimitStore = new Map();
+
+function rateLimit({ windowMs, max, message }) {
+  return (req, res, next) => {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
+    const key = `${req.path}:${ip}`;
+    const now = Date.now();
+    const record = rateLimitStore.get(key) || { count: 0, resetAt: now + windowMs };
+
+    if (now > record.resetAt) {
+      record.count = 0;
+      record.resetAt = now + windowMs;
+    }
+
+    record.count++;
+    rateLimitStore.set(key, record);
+
+    if (record.count > max) {
+      return res.status(429).json({ error: message || 'Trop de requêtes. Réessaie plus tard.' });
+    }
+    next();
+  };
+}
+
+// Nettoyage automatique du store toutes les 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of rateLimitStore.entries()) {
+    if (now > val.resetAt) rateLimitStore.delete(key);
+  }
+}, 10 * 60 * 1000);
+
+// Limiteurs
+const apiLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, max: 150, message: 'Trop de requêtes API.' });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10,  message: 'Trop de tentatives de connexion.' });
+const saveLimiter = rateLimit({ windowMs: 60 * 1000,      max: 20,  message: 'Trop de sauvegardes. Attends 1 minute.' });
+
+// ================================================================
+//  MONGODB
+// ================================================================
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Dashboard MongoDB OK'))
   .catch(err => console.error('❌ MongoDB:', err.message));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
-// ✅ Sert les fichiers statiques depuis la racine (style.css, etc.)
+// Sert les fichiers statiques depuis la racine
 app.use(express.static(path.join(__dirname)));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -25,9 +81,17 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
-  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 },
+  cookie: {
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  },
 }));
 
+// ================================================================
+//  MIDDLEWARES AUTH
+// ================================================================
 function requireAuth(req, res, next) {
   if (req.session.user) return next();
   res.redirect('/login');
@@ -46,62 +110,62 @@ async function requireAdmin(req, res, next) {
 
 const CALLBACK_URL = process.env.DISCORD_CALLBACK_URL || `http://localhost:${PORT}/auth/callback`;
 
-// ── Schémas Mongoose ──────────────────────────────────────────────
+// ================================================================
+//  SCHÉMAS MONGOOSE
+// ================================================================
 const GuildSchema = new mongoose.Schema({}, { strict: false });
 const PaymentLogSchema = new mongoose.Schema({
-  guildId:    String,
-  guildName:  String,
-  userId:     String,
-  username:   String,
-  method:     String,
-  amount:     Number,
-  note:       String,
-  expiresAt:  Date,
-  createdAt:  { type: Date, default: Date.now },
+  guildId:   String,
+  guildName: String,
+  userId:    String,
+  username:  String,
+  method:    String,
+  amount:    Number,
+  note:      String,
+  expiresAt: Date,
+  createdAt: { type: Date, default: Date.now },
 });
 
-function getGuild() {
-  return mongoose.models.Guild || mongoose.model('Guild', GuildSchema);
-}
-function getPaymentLog() {
-  return mongoose.models.PaymentLog || mongoose.model('PaymentLog', PaymentLogSchema);
-}
+function getGuild()      { return mongoose.models.Guild      || mongoose.model('Guild',      GuildSchema); }
+function getPaymentLog() { return mongoose.models.PaymentLog || mongoose.model('PaymentLog', PaymentLogSchema); }
 
-// ── Auth ──────────────────────────────────────────────────────────
-app.get('/auth/discord', (req, res) => {
+// ================================================================
+//  AUTH DISCORD
+// ================================================================
+app.get('/auth/discord', authLimiter, (req, res) => {
   const params = new URLSearchParams({
-    client_id: process.env.DISCORD_CLIENT_ID,
-    redirect_uri: CALLBACK_URL,
+    client_id:     process.env.DISCORD_CLIENT_ID,
+    redirect_uri:  CALLBACK_URL,
     response_type: 'code',
-    scope: 'identify guilds',
+    scope:         'identify guilds',
   });
   res.redirect('https://discord.com/api/oauth2/authorize?' + params.toString());
 });
 
-app.get('/auth/callback', async (req, res) => {
+app.get('/auth/callback', authLimiter, async (req, res) => {
   const { code } = req.query;
   if (!code) return res.redirect('/login');
   try {
     const tokenRes = await axios.post('https://discord.com/api/oauth2/token',
       new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID,
+        client_id:     process.env.DISCORD_CLIENT_ID,
         client_secret: process.env.DISCORD_CLIENT_SECRET,
-        grant_type: 'authorization_code',
+        grant_type:    'authorization_code',
         code,
-        redirect_uri: CALLBACK_URL,
+        redirect_uri:  CALLBACK_URL,
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
     const { access_token } = tokenRes.data;
     const [userRes, guildsRes] = await Promise.all([
-      axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${access_token}` } }),
+      axios.get('https://discord.com/api/users/@me',        { headers: { Authorization: `Bearer ${access_token}` } }),
       axios.get('https://discord.com/api/users/@me/guilds', { headers: { Authorization: `Bearer ${access_token}` } }),
     ]);
     req.session.user = {
-      id: userRes.data.id,
+      id:       userRes.data.id,
       username: userRes.data.username,
-      avatar: userRes.data.avatar,
-      guilds: guildsRes.data,
+      avatar:   userRes.data.avatar,
+      guilds:   guildsRes.data,
     };
     if (userRes.data.id === process.env.OWNER_DISCORD_ID) return res.redirect('/admin');
     res.redirect('/dashboard');
@@ -113,29 +177,33 @@ app.get('/auth/callback', async (req, res) => {
 
 app.get('/auth/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
-// ── Pages ─────────────────────────────────────────────────────────
-app.get('/', (req, res) => res.redirect('/login'));
-app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
-app.get('/dashboard', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
+// ================================================================
+//  PAGES HTML
+// ================================================================
+app.get('/',                   (req, res) => res.redirect('/login'));
+app.get('/login',              (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
+app.get('/dashboard',          requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 app.get('/dashboard/:guildId', requireAuth, requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'guild.html')));
-app.get('/admin', requireAuth, (req, res) => {
+app.get('/admin',              requireAuth, (req, res) => {
   if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.redirect('/dashboard');
   res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
-// ── API utilisateur ───────────────────────────────────────────────
-app.get('/api/me', requireAuth, (req, res) => {
+// ================================================================
+//  API — Utilisateur
+// ================================================================
+app.get('/api/me', requireAuth, apiLimiter, (req, res) => {
   const u = req.session.user;
   res.json({ id: u.id, username: u.username, avatar: u.avatar, guilds: u.guilds, isOwner: u.id === process.env.OWNER_DISCORD_ID });
 });
 
-app.get('/api/guilds', requireAuth, async (req, res) => {
+app.get('/api/guilds', requireAuth, apiLimiter, async (req, res) => {
   try {
     const Guild = getGuild();
     const adminGuilds = req.session.user.guilds.filter(g => (g.permissions & 0x8) === 0x8 || g.owner);
     const dbGuilds = await Guild.find({ guildId: { $in: adminGuilds.map(g => g.id) } });
 
-    // ✅ Fix botPresent : vérifie aussi via l'API Discord Bot
+    // Récupère les serveurs où le bot est présent via l'API Discord
     let botGuildIds = new Set(dbGuilds.map(db => db.guildId));
     try {
       const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
@@ -147,12 +215,12 @@ app.get('/api/guilds', requireAuth, async (req, res) => {
     res.json(adminGuilds.map(g => ({
       ...g,
       botPresent: botGuildIds.has(g.id),
-      premium: dbGuilds.find(db => db.guildId === g.id)?.premium || false,
+      premium:    dbGuilds.find(db => db.guildId === g.id)?.premium || false,
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/guild/:guildId', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
     const Guild = getGuild();
     let guild = await Guild.findOne({ guildId: req.params.guildId });
@@ -161,29 +229,125 @@ app.get('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
+// ================================================================
+//  API — Sauvegarde guild (avec blocage champs Premium)
+// ================================================================
+app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (req, res) => {
   try {
     const Guild = getGuild();
-    await Guild.findOneAndUpdate({ guildId: req.params.guildId }, { ...req.body, updatedAt: new Date() }, { upsert: true });
-    res.json({ success: true });
+    const guild = await Guild.findOne({ guildId: req.params.guildId });
+    const isPremium = guild?.premium && guild?.premiumExpires > new Date();
+
+    const body = { ...req.body, updatedAt: new Date() };
+
+    // ✅ Bloquer les champs réservés Premium si pas premium
+    if (!isPremium) {
+      delete body.aiMemory;
+      delete body.tempVoice;         // Salons vocaux temporaires
+      delete body.botStatus;         // Statut bot custom
+      delete body.socialNotifs;      // Notifications sociales
+      delete body.customCommands;    // Commandes custom (futur)
+
+      // Forcer les limites gratuites sur les tickets
+      if (body.tickets) {
+        body.tickets.maxOpen = Math.min(body.tickets.maxOpen || 5, 5);
+      }
+    }
+
+    await Guild.findOneAndUpdate(
+      { guildId: req.params.guildId },
+      body,
+      { upsert: true }
+    );
+    res.json({ success: true, isPremium });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/guild/:guildId/channels', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/guild/:guildId/channels', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
     const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/channels`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
-    res.json(r.data.filter(c => c.type === 0 || c.type === 4).map(c => ({ id: c.id, name: c.name, type: c.type })));
+    res.json(r.data.filter(c => c.type === 0 || c.type === 2 || c.type === 4).map(c => ({ id: c.id, name: c.name, type: c.type })));
   } catch { res.status(500).json({ error: 'Erreur channels' }); }
 });
 
-app.get('/api/guild/:guildId/roles', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/guild/:guildId/roles', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
     const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
     res.json(r.data.filter(r => r.name !== '@everyone').map(r => ({ id: r.id, name: r.name })));
   } catch { res.status(500).json({ error: 'Erreur roles' }); }
 });
 
-// ── API Admin — Stats ─────────────────────────────────────────────
+// ================================================================
+//  API — Envoi de message dans un salon Discord
+// ================================================================
+app.post('/api/guild/:guildId/send-message', requireAuth, requireAdmin, saveLimiter, async (req, res) => {
+  try {
+    const { channelId, content, embed } = req.body;
+    if (!channelId) return res.status(400).json({ error: 'Salon requis' });
+
+    const payload = {};
+    if (content) payload.content = content;
+    if (embed && (embed.title || embed.description)) {
+      payload.embeds = [{
+        title:       embed.title       || undefined,
+        description: embed.description || undefined,
+        color:       embed.color ? parseInt(embed.color.replace('#', ''), 16) : 0x7c3aed,
+        image:       embed.imageUrl ? { url: embed.imageUrl } : undefined,
+        footer:      embed.footer ? { text: embed.footer } : undefined,
+        thumbnail:   embed.thumbnailUrl ? { url: embed.thumbnailUrl } : undefined,
+      }];
+    }
+    if (!payload.content && !payload.embeds) return res.status(400).json({ error: 'Contenu ou embed requis' });
+
+    await axios.post(`https://discord.com/api/v10/channels/${channelId}/messages`, payload, {
+      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN, 'Content-Type': 'application/json' }
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Send message:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Erreur envoi message' });
+  }
+});
+
+// ================================================================
+//  API — Mémoire IA (Premium uniquement)
+// ================================================================
+app.get('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
+  try {
+    const Guild = getGuild();
+    const guild = await Guild.findOne({ guildId: req.params.guildId });
+    const isPremium = guild?.premium && guild?.premiumExpires > new Date();
+    if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
+    res.json({ memory: guild?.aiMemory || [] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, saveLimiter, async (req, res) => {
+  try {
+    const Guild = getGuild();
+    const guild = await Guild.findOne({ guildId: req.params.guildId });
+    const isPremium = guild?.premium && guild?.premiumExpires > new Date();
+    if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
+    const { action, fact, index } = req.body;
+    if (action === 'add') {
+      if (!fact || typeof fact !== 'string' || fact.length > 300) return res.status(400).json({ error: 'Fait invalide (max 300 caractères)' });
+      if ((guild.aiMemory || []).length >= 20) return res.status(400).json({ error: 'Limite de 20 faits atteinte' });
+      await Guild.updateOne({ guildId: req.params.guildId }, { $push: { aiMemory: fact.trim() } });
+    } else if (action === 'remove') {
+      const idx = parseInt(index);
+      if (isNaN(idx) || idx < 0 || idx >= (guild.aiMemory || []).length) return res.status(400).json({ error: 'Index invalide' });
+      guild.aiMemory.splice(idx, 1);
+      await Guild.updateOne({ guildId: req.params.guildId }, { $set: { aiMemory: guild.aiMemory } });
+    } else if (action === 'reset') {
+      await Guild.updateOne({ guildId: req.params.guildId }, { $set: { aiMemory: [] } });
+    }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ================================================================
+//  API — Admin Stats
+// ================================================================
 app.get('/api/admin/stats', requireAuth, requireOwner, async (req, res) => {
   try {
     const Guild = getGuild();
@@ -193,15 +357,17 @@ app.get('/api/admin/stats', requireAuth, requireOwner, async (req, res) => {
     const logs = await PaymentLog.find({}).sort({ createdAt: -1 }).limit(10);
     const totalRevenue = await PaymentLog.aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]);
     res.json({
-      totalGuilds: allGuilds.length,
-      premiumGuilds: premiumGuilds.length,
-      totalRevenue: totalRevenue[0]?.total || 0,
+      totalGuilds:       allGuilds.length,
+      premiumGuilds:     premiumGuilds.length,
+      totalRevenue:      totalRevenue[0]?.total || 0,
       recentActivations: logs,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── API Admin — Premium (GET liste) ──────────────────────────────
+// ================================================================
+//  API — Admin Premium
+// ================================================================
 app.get('/api/admin/premium', requireAuth, requireOwner, async (req, res) => {
   try {
     const Guild = getGuild();
@@ -212,7 +378,6 @@ app.get('/api/admin/premium', requireAuth, requireOwner, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── API Admin — Premium Activer ───────────────────────────────────
 app.post('/api/admin/premium/activate', requireAuth, requireOwner, async (req, res) => {
   try {
     const Guild = getGuild();
@@ -230,36 +395,33 @@ app.post('/api/admin/premium/activate', requireAuth, requireOwner, async (req, r
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── API Admin — Premium Révoquer ──────────────────────────────────
 app.post('/api/admin/premium/revoke', requireAuth, requireOwner, async (req, res) => {
   try {
     const Guild = getGuild();
-    // ✅ Fix : { guildId: req.body.guildId } au lieu de { req.body.guildId }
     await Guild.findOneAndUpdate({ guildId: req.body.guildId }, { premium: false, premiumExpires: null });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── API Admin — Tous les serveurs ─────────────────────────────────
+// ================================================================
+//  API — Admin Guilds & Search
+// ================================================================
 app.get('/api/admin/guilds', requireAuth, requireOwner, async (req, res) => {
   try {
-    const Guild = getGuild();
-    const guilds = await Guild.find({}).sort({ updatedAt: -1 });
+    const guilds = await getGuild().find({}).sort({ updatedAt: -1 });
     res.json(guilds);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── API Admin — Recherche utilisateur ────────────────────────────
 app.get('/api/admin/search-user', requireAuth, requireOwner, async (req, res) => {
   try {
-    const PaymentLog = getPaymentLog();
     const q = req.query.q?.trim();
     if (!q) return res.json({ logs: [] });
-    const logs = await PaymentLog.find({
+    const logs = await getPaymentLog().find({
       $or: [
-        { guildId: q },
-        { userId: q },
-        { username: { $regex: q, $options: 'i' } },
+        { guildId:   q },
+        { userId:    q },
+        { username:  { $regex: q, $options: 'i' } },
         { guildName: { $regex: q, $options: 'i' } },
       ]
     }).sort({ createdAt: -1 });
@@ -267,41 +429,18 @@ app.get('/api/admin/search-user', requireAuth, requireOwner, async (req, res) =>
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── API — Mémoire IA (Premium) ────────────────────────────────────
-app.get('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const Guild = getGuild();
-    const guild = await Guild.findOne({ guildId: req.params.guildId });
-    const isPremium = guild?.premium && guild?.premiumExpires > new Date();
-    if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
-    res.json({ memory: guild?.aiMemory || [] });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+// ================================================================
+//  PROTECTION — Route inconnue & erreurs globales
+// ================================================================
+app.use((req, res) => res.status(404).json({ error: 'Route introuvable' }));
 
-app.post('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const Guild = getGuild();
-    const guild = await Guild.findOne({ guildId: req.params.guildId });
-    const isPremium = guild?.premium && guild?.premiumExpires > new Date();
-    if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
-    const { action, fact, index } = req.body;
-    if (action === 'add') {
-      if (!fact) return res.status(400).json({ error: 'Fait invalide' });
-      if ((guild.aiMemory || []).length >= 20) return res.status(400).json({ error: 'Limite 20 faits atteinte' });
-      await Guild.updateOne({ guildId: req.params.guildId }, { $push: { aiMemory: fact.trim() } });
-    } else if (action === 'remove') {
-      const idx = parseInt(index);
-      if (isNaN(idx)) return res.status(400).json({ error: 'Index invalide' });
-      guild.aiMemory.splice(idx, 1);
-      await Guild.updateOne({ guildId: req.params.guildId }, { $set: { aiMemory: guild.aiMemory } });
-    } else if (action === 'reset') {
-      await Guild.updateOne({ guildId: req.params.guildId }, { $set: { aiMemory: [] } });
-    }
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+app.use((err, req, res, next) => {
+  console.error('Erreur serveur:', err.message);
+  res.status(500).json({ error: 'Erreur interne du serveur' });
 });
 
 app.listen(PORT, () => {
   console.log(`🌐 Dashboard sur http://localhost:${PORT}`);
   console.log(`👑 Owner: ${process.env.OWNER_DISCORD_ID}`);
+  console.log(`🔒 Sécurité activée (rate limiting, headers, blocage Premium)`);
 });
