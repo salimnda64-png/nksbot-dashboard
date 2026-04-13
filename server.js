@@ -141,6 +141,7 @@ app.get('/api/guild/:guildId/roles', requireAuth, requireAdmin, async (req, res)
   } catch { res.status(500).json({ error: 'Erreur roles' }); }
 });
 
+// ── Admin — Premium ───────────────────────────────────────────────
 app.post('/api/admin/premium/activate', requireAuth, async (req, res) => {
   if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.status(403).json({ error: 'Non autorisé' });
   try {
@@ -156,7 +157,47 @@ app.post('/api/admin/premium/revoke', requireAuth, async (req, res) => {
   if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.status(403).json({ error: 'Non autorisé' });
   try {
     const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
-    await Guild.findOneAndUpdate({ req.body.guildId }, { premium: false });
+    // ✅ Fix : { guildId: req.body.guildId } au lieu de { req.body.guildId }
+    await Guild.findOneAndUpdate({ guildId: req.body.guildId }, { premium: false, premiumExpires: null });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Mémoire IA (Premium) ──────────────────────────────────────────
+app.get('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    const guild = await Guild.findOne({ guildId: req.params.guildId }).select('aiMemory premium premiumExpires');
+    const isPremium = guild?.premium && guild?.premiumExpires > new Date();
+    if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
+    res.json({ memory: guild?.aiMemory || [] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    const guild = await Guild.findOne({ guildId: req.params.guildId }).select('premium premiumExpires aiMemory');
+    const isPremium = guild?.premium && guild?.premiumExpires > new Date();
+    if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
+
+    const { action, fact, index } = req.body;
+
+    if (action === 'add') {
+      if (!fact || typeof fact !== 'string') return res.status(400).json({ error: 'Fait invalide' });
+      if ((guild.aiMemory || []).length >= 20) return res.status(400).json({ error: 'Limite de 20 faits atteinte' });
+      await Guild.updateOne({ guildId: req.params.guildId }, { $push: { aiMemory: fact.trim() } });
+    } else if (action === 'remove') {
+      const idx = parseInt(index);
+      if (isNaN(idx) || idx < 0 || idx >= (guild.aiMemory || []).length) return res.status(400).json({ error: 'Index invalide' });
+      guild.aiMemory.splice(idx, 1);
+      await Guild.updateOne({ guildId: req.params.guildId }, { $set: { aiMemory: guild.aiMemory } });
+    } else if (action === 'reset') {
+      await Guild.updateOne({ guildId: req.params.guildId }, { $set: { aiMemory: [] } });
+    } else {
+      return res.status(400).json({ error: 'Action invalide' });
+    }
+
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
