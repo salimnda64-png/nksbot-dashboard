@@ -1,0 +1,15 @@
+{
+  "name": "nksbot-dashboard",
+  "version": "1.02.0",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "express": "^4.18.0",
+    "express-session": "^1.17.0",
+    "connect-mongo": "^5.0.0",
+    "mongoose": "^8.0.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.4.0"
+  },
+  "engines": { "node": ">=18.0.0" }
+}
