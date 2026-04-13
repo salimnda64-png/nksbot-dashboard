@@ -15,6 +15,9 @@ mongoose.connect(process.env.MONGODB_URI)
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ✅ Sert les fichiers statiques depuis la racine (style.css, etc.)
+app.use(express.static(path.join(__dirname)));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(session({
@@ -180,9 +183,7 @@ app.post('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req,
     const guild = await Guild.findOne({ guildId: req.params.guildId }).select('premium premiumExpires aiMemory');
     const isPremium = guild?.premium && guild?.premiumExpires > new Date();
     if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
-
     const { action, fact, index } = req.body;
-
     if (action === 'add') {
       if (!fact || typeof fact !== 'string') return res.status(400).json({ error: 'Fait invalide' });
       if ((guild.aiMemory || []).length >= 20) return res.status(400).json({ error: 'Limite de 20 faits atteinte' });
@@ -197,7 +198,6 @@ app.post('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, async (req,
     } else {
       return res.status(400).json({ error: 'Action invalide' });
     }
-
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
