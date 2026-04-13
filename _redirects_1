@@ -1,0 +1,5 @@
+/login https://nksbot-dashboard.onrender.com/login 301
+/dashboard/* https://nksbot-dashboard.onrender.com/dashboard/:splat 301
+/auth/* https://nksbot-dashboard.onrender.com/auth/:splat 301
+/api/* https://nksbot-dashboard.onrender.com/api/:splat 301
+/admin https://nksbot-dashboard.onrender.com/admin 301
