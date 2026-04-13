@@ -431,9 +431,37 @@ app.post('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
       guild.markModified(key);
     }
 
-    // Vérification : botStatus seulement si premium
-    if (req.body.botStatus && !guild.premium) {
+    // ── Vérifications Premium ─────────────────────────────────
+    const isPrem = guild.premium && guild.premiumExpires > new Date();
+
+    // Statut bot → Premium uniquement
+    if (req.body.botStatus && !isPrem) {
       return res.status(403).json({ error: 'Le statut du bot est une fonctionnalité Premium.' });
+    }
+
+    // Transcriptions tickets → Premium uniquement
+    if (req.body.tickets?.transcriptsEnabled && !isPrem) {
+      req.body.tickets.transcriptsEnabled = false;
+    }
+
+    // Priorité tickets → Premium uniquement  
+    if (req.body.tickets?.priorityEnabled && !isPrem) {
+      req.body.tickets.priorityEnabled = false;
+    }
+
+    // Max tickets → limiter à 5 si pas premium
+    if (req.body.tickets?.maxOpen && !isPrem) {
+      req.body.tickets.maxOpen = Math.min(req.body.tickets.maxOpen, 5);
+    }
+
+    // Multiplicateur XP > 2 → Premium uniquement
+    if (req.body.xp?.multiplier && !isPrem) {
+      req.body.xp.multiplier = Math.min(req.body.xp.multiplier, 2);
+    }
+
+    // Notifications sociales → Premium uniquement
+    if (req.body.socialNotifs && !isPrem) {
+      return res.status(403).json({ error: 'Les notifications sociales sont une fonctionnalité Premium.' });
     }
 
     guild.updatedAt = new Date();
