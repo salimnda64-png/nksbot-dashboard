@@ -1,243 +1,167 @@
-// ================================================================
-//  NKSBOT v1.01 — Base de données (MongoDB / Mongoose)
-// ================================================================
+require('dotenv').config();
+const express = require('express');
+const session = require('express-session');
+const MongoStore = require('connect-mongo');
 const mongoose = require('mongoose');
+const axios = require('axios');
+const path = require('path');
 
-async function connect() {
-  await mongoose.connect(process.env.MONGODB_URI);
-  console.log('✅ MongoDB connecté');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('✅ Dashboard MongoDB OK'))
+  .catch(err => console.error('❌ MongoDB:', err.message));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'nksbot_secret',
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({ mongoUrl: process.env.MONGODB_URI }),
+  cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 },
+}));
+
+function requireAuth(req, res, next) {
+  if (req.session.user) return next();
+  res.redirect('/login');
 }
 
-// ── Guild (config serveur) ────────────────────────────────────────
-const GuildSchema = new mongoose.Schema({
-  guildId:   { type: String, required: true, unique: true },
-  guildName: String,
-  premium:        { type: Boolean, default: false },
-  premiumExpires: Date,
+async function requireAdmin(req, res, next) {
+  const guild = req.session.user?.guilds?.find(g => g.id === req.params.guildId);
+  if (guild && ((guild.permissions & 0x8) === 0x8 || guild.owner)) return next();
+  res.redirect('/dashboard');
+}
 
-  // Préfixe configurable depuis le dashboard
-  prefix: { type: String, default: '!', enum: ['!', '/'] },
+const CALLBACK_URL = process.env.DISCORD_CALLBACK_URL || `http://localhost:${PORT}/auth/callback`;
 
-  // Rôles autorisés à accéder au panel dashboard
-  panelRoles: [String],
-
-  // Auto-roles à l'arrivée
-  autoroles: [String],
-
-  // Logs par salon
-  logs: {
-    membres:    String,
-    messages:   String,
-    moderation: String,
-    vocal:      String,
-    commandes:  String,
-    raid:       String,
-  },
-
-  // Welcome / Goodbye
-  welcome: {
-    enabled:          { type: Boolean, default: false },
-    channelId:        String,
-    title:            { type: String, default: 'Bienvenue !' },
-    message:          { type: String, default: 'Bienvenue {user} sur {server} !' },
-    color:            { type: String, default: '#7c3aed' },
-    imageUrl:         String,
-    dmEnabled:        Boolean,
-    dmMessage:        String,
-    goodbyeEnabled:   { type: Boolean, default: false },
-    goodbyeChannelId: String,
-    goodbyeMessage:   { type: String, default: 'Au revoir {user} !' },
-  },
-
-  // Tickets avancés
-  tickets: {
-    categoryId:         String,
-    staffRoleId:        String,
-    logChannelId:       String,
-    mode:               { type: String, default: 'channel' },
-    maxOpen:            { type: Number, default: 5 },
-    priorityEnabled:    { type: Boolean, default: false },
-    transcriptsEnabled: { type: Boolean, default: false },
-    closeMessage:       { type: String, default: 'Ticket fermé. Merci !' },
-    categories: [{
-      id:     String,
-      label:  String,
-      emoji:  String,
-      roleId: String,
-    }],
-  },
-
-  // Anti-raid
-  antiRaid: {
-    enabled:        { type: Boolean, default: true },
-    joinThreshold:  { type: Number,  default: 5 },
-    joinTimeWindow: { type: Number,  default: 10 },
-    action:         { type: String,  default: 'kick' },
-  },
-
-  // Auto-mod
-  autoMod: {
-    enabled:       Boolean,
-    filterLinks:   Boolean,
-    filterInvites: { type: Boolean, default: true },
-    filterCaps:    Boolean,
-    capsThreshold: { type: Number, default: 70 },
-    bannedWords:   [String],
-    warnThreshold: { type: Number, default: 3 },
-  },
-
-  // XP
-  xp: {
-    enabled:         { type: Boolean, default: true },
-    announceChannel: String,
-    multiplier:      { type: Number, default: 1 },
-    levelRoles: [{ level: Number, roleId: String }],
-  },
-
-  // Économie
-  economy: {
-    enabled:       Boolean,
-    currencyName:  { type: String, default: 'pièces' },
-    currencyEmoji: { type: String, default: '🪙' },
-  },
-
-  // ── NOTIFICATIONS SOCIALES ──────────────────────────────────────
-  socialNotifs: {
-    youtube: {
-      enabled:         { type: Boolean, default: false },
-      channelId:       String,          // ID ou handle YouTube (ex: @monchannel)
-      discordChannelId: String,          // Salon Discord où envoyer
-      message:         { type: String, default: '🎬 {channel} a publié une nouvelle vidéo !' },
-      pingRole:        String,
-      notifyVideo:     { type: Boolean, default: true },
-      notifyLive:      { type: Boolean, default: true },
-      notifyShort:     { type: Boolean, default: true },
-      lastVideoId:     String,           // Pour ne pas renvoyer deux fois
-    },
-    twitch: {
-      enabled:         { type: Boolean, default: false },
-      username:        String,           // Nom d'utilisateur Twitch
-      discordChannelId: String,
-      message:         { type: String, default: '🔴 {streamer} est en live sur Twitch !' },
-      pingRole:        String,
-      showGame:        { type: Boolean, default: true },
-      showViewers:     { type: Boolean, default: true },
-      liveMessageId:   String,           // ID du message envoyé (pour l'éditer si fin de live)
-      isLive:          { type: Boolean, default: false },
-    },
-    tiktok: {
-      enabled:         { type: Boolean, default: false },
-      username:        String,
-      discordChannelId: String,
-      message:         { type: String, default: '🎵 {user} a posté une nouvelle vidéo TikTok !' },
-      pingRole:        String,
-      lastVideoId:     String,
-    },
-    instagram: {
-      enabled:         { type: Boolean, default: false },
-      username:        String,
-      discordChannelId: String,
-      message:         { type: String, default: '📸 {user} a posté sur Instagram !' },
-      pingRole:        String,
-      notifyPost:      { type: Boolean, default: true },
-      notifyReel:      { type: Boolean, default: true },
-      lastPostId:      String,
-    },
-  },
-
-  // ── STATUT BOT (Premium only) ───────────────────────────────────
-  botStatus: {
-    enabled:      { type: Boolean, default: false },
-    status:       { type: String, default: 'online' },   // online / idle / dnd / invisible
-    activityType: { type: String, default: 'PLAYING' },  // PLAYING / WATCHING / LISTENING / COMPETING
-    activityText: { type: String, default: '' },
-  },
-
-  // ── REACTION ROLES ──────────────────────────────────────────────
-  reactionRoles: [{
-    messageId: String,
-    channelId: String,
-    type:      { type: String, enum: ['reaction', 'button'], default: 'button' },
-    roles: [{
-      emoji:  String,
-      label:  String,
-      roleId: String,
-      style:  { type: String, default: 'PRIMARY' },
-    }],
-  }],
-
-  updatedAt: { type: Date, default: Date.now },
+app.get('/auth/discord', (req, res) => {
+  const params = new URLSearchParams({
+    client_id: process.env.DISCORD_CLIENT_ID,
+    redirect_uri: CALLBACK_URL,
+    response_type: 'code',
+    scope: 'identify guilds',
+  });
+  res.redirect('https://discord.com/api/oauth2/authorize?' + params.toString());
 });
 
-// ── Member (XP, économie, IA) ─────────────────────────────────────
-const MemberSchema = new mongoose.Schema({
-  guildId:    { type: String, required: true },
-  userId:     { type: String, required: true },
-  xp:         { type: Number, default: 0 },
-  level:      { type: Number, default: 0 },
-  balance:    { type: Number, default: 0 },
-  warnings:   { type: Number, default: 0 },
-  lastDaily:  Date,
-  lastWork:   Date,
-  aiCredits:  { type: Number, default: 500 },   // 500 crédits par défaut (gratuit)
-  aiHistory:  [{ role: String, content: String }],
-  aiResetAt:  Date,                              // Pour reset mensuel
+app.get('/auth/callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.redirect('/login');
+  try {
+    const tokenRes = await axios.post('https://discord.com/api/oauth2/token',
+      new URLSearchParams({
+        client_id: process.env.DISCORD_CLIENT_ID,
+        client_secret: process.env.DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: CALLBACK_URL,
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    const { access_token } = tokenRes.data;
+    const [userRes, guildsRes] = await Promise.all([
+      axios.get('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${access_token}` } }),
+      axios.get('https://discord.com/api/users/@me/guilds', { headers: { Authorization: `Bearer ${access_token}` } }),
+    ]);
+    req.session.user = {
+      id: userRes.data.id,
+      username: userRes.data.username,
+      avatar: userRes.data.avatar,
+      guilds: guildsRes.data,
+    };
+    if (userRes.data.id === process.env.OWNER_DISCORD_ID) return res.redirect('/admin');
+    res.redirect('/dashboard');
+  } catch (err) {
+    console.error('OAuth2:', err.response?.data || err.message);
+    res.redirect('/login?error=oauth');
+  }
 });
 
-// Index composé pour éviter les doublons
-MemberSchema.index({ guildId: 1, userId: 1 }, { unique: true });
+app.get('/auth/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
-const Guild  = mongoose.models.Guild  || mongoose.model('Guild',  GuildSchema);
-const Member = mongoose.models.Member || mongoose.model('Member', MemberSchema);
+app.get('/', (req, res) => res.redirect('/login'));
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
+app.get('/dashboard', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
+app.get('/dashboard/:guildId', requireAuth, requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'guild.html')));
+app.get('/admin', requireAuth, (req, res) => {
+  if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.redirect('/dashboard');
+  res.sendFile(path.join(__dirname, 'admin.html'));
+});
 
-// ── Helpers ───────────────────────────────────────────────────────
-async function getGuild(guildId, guildName) {
-  let g = await Guild.findOne({ guildId });
-  if (!g) {
-    g = new Guild({ guildId, guildName: guildName || undefined });
-    await g.save();
-  } else if (guildName && g.guildName !== guildName) {
-    g.guildName = guildName;
-    await g.save();
-  }
-  return g;
-}
+app.get('/api/me', requireAuth, (req, res) => {
+  const u = req.session.user;
+  res.json({ id: u.id, username: u.username, avatar: u.avatar, guilds: u.guilds, isOwner: u.id === process.env.OWNER_DISCORD_ID });
+});
 
-async function getMember(guildId, userId) {
-  let m = await Member.findOne({ guildId, userId });
-  if (!m) {
-    m = new Member({ guildId, userId, aiCredits: 500 });
-    await m.save();
-  }
+app.get('/api/guilds', requireAuth, async (req, res) => {
+  try {
+    const Guild = mongoose.models.Guild;
+    const adminGuilds = req.session.user.guilds.filter(g => (g.permissions & 0x8) === 0x8 || g.owner);
+    const dbGuilds = Guild ? await Guild.find({ guildId: { $in: adminGuilds.map(g => g.id) } }) : [];
+    res.json(adminGuilds.map(g => ({
+      ...g,
+      botPresent: dbGuilds.some(db => db.guildId === g.id),
+      premium: dbGuilds.find(db => db.guildId === g.id)?.premium || false,
+    })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
-  // Reset mensuel des crédits IA si ça fait plus d'un mois
-  if (!m.aiResetAt || m.aiResetAt < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) {
-    const guildDoc = await Guild.findOne({ guildId });
-    const isPrem   = guildDoc?.premium && guildDoc?.premiumExpires > new Date();
-    m.aiCredits = isPrem ? Infinity : 500;
-    m.aiResetAt = new Date();
-    await m.save();
-  }
+app.get('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    let guild = await Guild.findOne({ guildId: req.params.guildId });
+    if (!guild) guild = { guildId: req.params.guildId };
+    res.json(guild);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
-  return m;
-}
+app.post('/api/guild/:guildId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    await Guild.findOneAndUpdate({ guildId: req.params.guildId }, { ...req.body, updatedAt: new Date() }, { upsert: true });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
-async function isPremium(guildId) {
-  const g = await Guild.findOne({ guildId });
-  if (!g?.premium) return false;
-  if (g.premiumExpires && g.premiumExpires < new Date()) {
-    // Expiration — désactive auto
-    g.premium = false;
-    await g.save();
-    return false;
-  }
-  return true;
-}
+app.get('/api/guild/:guildId/channels', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/channels`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
+    res.json(r.data.filter(c => c.type === 0 || c.type === 4).map(c => ({ id: c.id, name: c.name, type: c.type })));
+  } catch { res.status(500).json({ error: 'Erreur channels' }); }
+});
 
-// Récupère le préfixe du serveur (depuis DB ou config par défaut)
-async function getPrefix(guildId) {
-  const g = await Guild.findOne({ guildId }).select('prefix');
-  return g?.prefix || '!';
-}
+app.get('/api/guild/:guildId/roles', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
+    res.json(r.data.filter(r => r.name !== '@everyone').map(r => ({ id: r.id, name: r.name })));
+  } catch { res.status(500).json({ error: 'Erreur roles' }); }
+});
 
-module.exports = { connect, Guild, Member, getGuild, getMember, isPremium, getPrefix };
+app.post('/api/admin/premium/activate', requireAuth, async (req, res) => {
+  if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.status(403).json({ error: 'Non autorisé' });
+  try {
+    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    const { guildId, days } = req.body;
+    const expires = new Date(Date.now() + (days || 30) * 24 * 60 * 60 * 1000);
+    await Guild.findOneAndUpdate({ guildId }, { premium: true, premiumExpires: expires }, { upsert: true });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/admin/premium/revoke', requireAuth, async (req, res) => {
+  if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.status(403).json({ error: 'Non autorisé' });
+  try {
+    const Guild = mongoose.models.Guild || mongoose.model('Guild', new mongoose.Schema({}, { strict: false }));
+    await Guild.findOneAndUpdate({ req.body.guildId }, { premium: false });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 Dashboard sur http://localhost:${PORT}`);
+  console.log(`👑 Owner: ${process.env.OWNER_DISCORD_ID}`);
+});
