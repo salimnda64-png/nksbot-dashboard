@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>NKSBOT — Le bot Discord ultime</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --blue:#3b82f6;--violet:#7c3aed;--cyan:#06b6d4;
+      --bg:#040710;--bg2:#070c1a;--bg3:#0c1427;
+      --text:#e2e8f8;--muted:#6b7fa8;--dim:#35456a;
+      --border:rgba(255,255,255,0.07);--border-b:rgba(59,130,246,0.2);
+      --card:rgba(12,20,39,0.9);
+      --font-d:'Syne',sans-serif;--font-b:'DM Sans',sans-serif;--font-m:'JetBrains Mono',monospace;
+    }
+    *{margin:0;padding:0;box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{background:var(--bg);color:var(--text);font-family:var(--font-b);overflow-x:hidden}
+    body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");}
+    ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border-b);border-radius:4px}
+    a{color:inherit;text-decoration:none}
+
+    /* AMBIENT */
+    .amb{position:fixed;border-radius:50%;filter:blur(120px);pointer-events:none;z-index:0}
+    .amb-1{width:700px;height:700px;background:radial-gradient(circle,rgba(59,130,246,0.07) 0%,transparent 70%);top:-200px;left:-100px}
+    .amb-2{width:600px;height:600px;background:radial-gradient(circle,rgba(124,58,237,0.06) 0%,transparent 70%);bottom:-150px;right:-100px}
+
+    /* NAV */
+    nav{position:fixed;top:0;left:0;right:0;z-index:100;
+      display:flex;align-items:center;justify-content:space-between;
+      padding:0 4rem;height:64px;
+      background:rgba(4,7,16,0.85);backdrop-filter:blur(24px);
+      border-bottom:1px solid var(--border);}
+    .logo{font-family:var(--font-d);font-size:1.3rem;font-weight:800;
+      background:linear-gradient(135deg,#fff 30%,#a78bfa);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .nav-links{display:flex;align-items:center;gap:2rem;list-style:none}
+    .nav-links a{color:var(--muted);font-size:0.88rem;font-weight:500;transition:color 0.2s}
+    .nav-links a:hover{color:var(--text)}
+    .nav-cta{display:flex;align-items:center;gap:0.8rem}
+    .btn-nav{padding:0.5rem 1.1rem;border-radius:9px;font-size:0.85rem;font-weight:600;cursor:pointer;border:1px solid transparent;font-family:var(--font-b);transition:all 0.2s}
+    .btn-ghost{background:transparent;border-color:var(--border);color:var(--muted)}
+    .btn-ghost:hover{border-color:var(--border-b);color:var(--text)}
+    .btn-blue{background:linear-gradient(135deg,var(--blue),var(--violet));color:#fff;box-shadow:0 0 24px rgba(59,130,246,0.25)}
+    .btn-blue:hover{box-shadow:0 0 40px rgba(59,130,246,0.4);transform:translateY(-1px)}
+
+    /* HERO */
+    .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 2rem 60px;position:relative;z-index:1}
+    .hero-badge{display:inline-flex;align-items:center;gap:6px;
+      background:rgba(6,182,212,0.08);border:1px solid rgba(6,182,212,0.2);
+      color:var(--cyan);font-size:0.78rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;
+      padding:6px 16px;border-radius:20px;margin-bottom:1.8rem}
+    .hero-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan);animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    .hero h1{font-family:var(--font-d);font-size:clamp(2.5rem,6vw,5rem);font-weight:800;line-height:1.05;color:#fff;letter-spacing:-0.03em;max-width:750px;margin-bottom:1.2rem}
+    .hero h1 .grad{background:linear-gradient(135deg,var(--blue),var(--violet),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .hero-desc{font-size:1.05rem;color:var(--muted);max-width:500px;line-height:1.7;margin-bottom:2.5rem}
+    .hero-cta{display:flex;gap:0.8rem;justify-content:center;flex-wrap:wrap;margin-bottom:3rem}
+    .btn-lg{padding:0.85rem 1.8rem;font-size:0.95rem;border-radius:12px}
+    .hero-stats{display:flex;gap:2.5rem;justify-content:center;flex-wrap:wrap}
+    .h-stat .val{font-family:var(--font-d);font-size:1.5rem;font-weight:800;color:#fff}
+    .h-stat .lbl{font-size:0.78rem;color:var(--muted);margin-top:2px}
+
+    /* FEATURES */
+    .section{padding:80px 4rem;position:relative;z-index:1}
+    .section-label{font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--cyan);font-weight:700;margin-bottom:0.6rem}
+    .section-title{font-family:var(--font-d);font-size:clamp(1.6rem,3vw,2.4rem);font-weight:800;color:#fff;letter-spacing:-0.02em;margin-bottom:0.8rem}
+    .section-sub{color:var(--muted);font-size:0.95rem;max-width:500px;line-height:1.7}
+    .feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.2rem;margin-top:3rem}
+    .feat-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:1.6rem;transition:all 0.3s;position:relative;overflow:hidden}
+    .feat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(59,130,246,0.4),transparent)}
+    .feat-card:hover{border-color:var(--border-b);transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,0.4)}
+    .feat-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:1rem}
+    .fi-blue{background:rgba(59,130,246,0.12)}
+    .fi-violet{background:rgba(124,58,237,0.12)}
+    .fi-cyan{background:rgba(6,182,212,0.12)}
+    .fi-gold{background:rgba(245,158,11,0.12)}
+    .feat-title{font-family:var(--font-d);font-size:1rem;font-weight:700;color:#fff;margin-bottom:0.5rem}
+    .feat-desc{font-size:0.85rem;color:var(--muted);line-height:1.6}
+
+    /* COLLABS */
+    .collab-section{padding:60px 4rem;border-top:1px solid var(--border);position:relative;z-index:1}
+    .collab-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem}
+    .collab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem}
+    .collab-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.5rem 1rem;text-align:center;transition:all 0.3s;position:relative;overflow:hidden}
+    .collab-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(124,58,237,0.4),transparent)}
+    .collab-card:hover{border-color:rgba(124,58,237,0.3);transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,0.4)}
+    .collab-avatar-wrap{position:relative;width:64px;height:64px;margin:0 auto 0.9rem;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:1.6rem;border:2px solid rgba(255,255,255,0.1)}
+    .collab-plat{position:absolute;bottom:-2px;right:-2px;width:22px;height:22px;border-radius:50%;border:2px solid var(--bg3);display:flex;align-items:center;justify-content:center;font-size:10px}
+    .collab-name{font-family:var(--font-d);font-size:0.9rem;font-weight:700;color:#fff;margin-bottom:3px}
+    .collab-platform{font-size:0.75rem;color:var(--muted);margin-bottom:0.5rem}
+    .collab-credit{font-size:0.78rem;color:var(--dim)}
+    .collab-empty{text-align:center;padding:3rem;color:var(--dim);font-size:0.9rem}
+
+    /* PRICING */
+    .pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.2rem;margin-top:2.5rem}
+    .price-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:2rem;position:relative;overflow:hidden;transition:all 0.3s}
+    .price-card.featured{border-color:var(--border-b);box-shadow:0 0 40px rgba(59,130,246,0.12)}
+    .price-card.featured::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--blue),var(--violet))}
+    .price-card:hover{transform:translateY(-4px)}
+    .price-badge{display:inline-block;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;padding:3px 10px;border-radius:20px;margin-bottom:1rem}
+    .pb-free{background:rgba(107,127,168,0.15);color:var(--muted);border:1px solid rgba(107,127,168,0.2)}
+    .pb-pro{background:rgba(59,130,246,0.12);color:var(--blue);border:1px solid rgba(59,130,246,0.25)}
+    .pb-premium{background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25)}
+    .price-name{font-family:var(--font-d);font-size:1.2rem;font-weight:800;color:#fff;margin-bottom:0.3rem}
+    .price-val{font-family:var(--font-d);font-size:2.5rem;font-weight:800;color:#fff;margin:0.8rem 0;line-height:1}
+    .price-val span{font-size:1rem;color:var(--muted);font-weight:400}
+    .price-desc{font-size:0.85rem;color:var(--muted);margin-bottom:1.5rem;line-height:1.6}
+    .price-feats{list-style:none;display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1.8rem}
+    .price-feats li{font-size:0.85rem;color:var(--muted);display:flex;align-items:center;gap:0.5rem}
+    .price-feats li::before{content:'✓';color:var(--blue);font-weight:700;flex-shrink:0}
+    .price-feats li.locked{opacity:0.4}
+    .price-feats li.locked::before{content:'✗';color:var(--muted)}
+
+    /* FOOTER */
+    footer{padding:3rem 4rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
+    .footer-logo{font-family:var(--font-d);font-size:1.1rem;font-weight:800;background:linear-gradient(135deg,#fff 30%,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .footer-links{display:flex;gap:1.5rem}
+    .footer-links a{font-size:0.85rem;color:var(--muted);transition:color 0.2s}
+    .footer-links a:hover{color:var(--text)}
+    .footer-copy{font-size:0.8rem;color:var(--dim)}
+
+    @media(max-width:768px){
+      nav{padding:0 1.5rem}
+      .section,.collab-section{padding:50px 1.5rem}
+      .nav-links{display:none}
+      footer{flex-direction:column;gap:1rem;text-align:center;padding:2rem 1.5rem}
+    }
+  </style>
+</head>
+<body>
+<div class="amb amb-1"></div>
+<div class="amb amb-2"></div>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">NKSBOT</div>
+  <ul class="nav-links">
+    <li><a href="#features">Fonctionnalités</a></li>
+    <li><a href="#pricing">Tarifs</a></li>
+    <li><a href="#collabs">Partenaires</a></li>
+    <li><a href="https://discord.gg/" target="_blank">Discord</a></li>
+  </ul>
+  <div class="nav-cta">
+    <a href="/login" class="btn-nav btn-ghost">Se connecter</a>
+    <a href="/login" class="btn-nav btn-blue">Démarrer →</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge"><span class="dot"></span> Bot Discord · v1.04</div>
+  <h1>Le bot Discord qui<br><span class="grad">change tout</span></h1>
+  <p class="hero-desc">Modération, IA, notifications, XP, économie… Tout ce dont ton serveur a besoin, dans un seul bot ultra-configurable.</p>
+  <div class="hero-cta">
+    <a href="/login" class="btn-nav btn-blue btn-lg">🚀 Ajouter à mon serveur</a>
+    <a href="#features" class="btn-nav btn-ghost btn-lg">Voir les fonctionnalités →</a>
+  </div>
+  <div class="hero-stats">
+    <div class="h-stat"><div class="val" id="stat-servers">—</div><div class="lbl">Serveurs actifs</div></div>
+    <div class="h-stat"><div class="val">500</div><div class="lbl">Crédits IA gratuits</div></div>
+    <div class="h-stat"><div class="val">24/7</div><div class="lbl">En ligne</div></div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="section-label">Fonctionnalités</div>
+  <div class="section-title">Tout ce qu'il te faut</div>
+  <p class="section-sub">Un seul bot, une configuration complète depuis le dashboard web.</p>
+  <div class="feat-grid">
+    <div class="feat-card">
+      <div class="feat-icon fi-blue">🛡️</div>
+      <div class="feat-title">Modération avancée</div>
+      <div class="feat-desc">Anti-raid, automod, filtres de mots, avertissements automatiques. Ton serveur est protégé 24/7.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon fi-violet">🤖</div>
+      <div class="feat-title">IA intégrée</div>
+      <div class="feat-desc">500 crédits IA gratuits par mois. Pose des questions, obtiens des réponses directement dans Discord.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon fi-cyan">📡</div>
+      <div class="feat-title">Notifications sociales</div>
+      <div class="feat-desc">YouTube, Twitch, TikTok, Instagram. Notifie ta communauté dès qu'un créateur publie.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon fi-gold">⭐</div>
+      <div class="feat-title">XP & Économie</div>
+      <div class="feat-desc">Système de niveaux, rôles automatiques, monnaie virtuelle, shop. Fidélise tes membres.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon fi-blue">🎫</div>
+      <div class="feat-title">Tickets de support</div>
+      <div class="feat-desc">Système de tickets configurable, catégories, rôles staff, transcripts. Support pro.</div>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon fi-violet">⚙️</div>
+      <div class="feat-title">Dashboard complet</div>
+      <div class="feat-desc">Configure tout depuis le web, sans commandes. Interface claire, changements instantanés.</div>
+    </div>
+  </div>
+</section>
+
+<!-- COLLABS -->
+<section class="collab-section" id="collabs">
+  <div class="collab-header">
+    <div>
+      <div class="section-label">Partenaires</div>
+      <div class="section-title" style="font-size:1.6rem">Nos créateurs & collabs</div>
+    </div>
+  </div>
+  <div class="collab-grid" id="collab-grid">
+    <div class="collab-empty" id="collab-empty">Aucune collaboration pour le moment.</div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="section-label">Tarifs</div>
+  <div class="section-title">Simple et transparent</div>
+  <p class="section-sub">Commence gratuitement. Passe Premium quand tu en as besoin.</p>
+  <div class="pricing-grid">
+    <div class="price-card">
+      <div class="price-badge pb-free">Gratuit</div>
+      <div class="price-name">Free</div>
+      <div class="price-val">0€ <span>/ mois</span></div>
+      <div class="price-desc">Pour découvrir NKSBOT et ses fonctionnalités de base.</div>
+      <ul class="price-feats">
+        <li>Modération complète</li>
+        <li>500 crédits IA / mois</li>
+        <li>Logs configurable</li>
+        <li>Système XP</li>
+        <li class="locked">Notifications sociales</li>
+        <li class="locked">Mémoire IA serveur</li>
+        <li class="locked">Statut bot custom</li>
+      </ul>
+      <a href="/login" class="btn-nav btn-ghost" style="width:100%;justify-content:center">Commencer →</a>
+    </div>
+    <div class="price-card featured">
+      <div class="price-badge pb-premium">⭐ Premium</div>
+      <div class="price-name">Premium</div>
+      <div class="price-val">1,99€ <span>/ mois</span></div>
+      <div class="price-desc">Toutes les fonctionnalités sans limite. Pour les serveurs actifs.</div>
+      <ul class="price-feats">
+        <li>Tout du plan Free</li>
+        <li>Crédits IA illimités</li>
+        <li>Notifications YouTube/Twitch/TikTok</li>
+        <li>Mémoire IA serveur</li>
+        <li>Statut bot personnalisé</li>
+        <li>Salons vocaux temporaires</li>
+        <li>Support prioritaire</li>
+      </ul>
+      <a href="/login" class="btn-nav btn-blue" style="width:100%;justify-content:center">Passer Premium →</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">NKSBOT</div>
+  <div class="footer-links">
+    <a href="#">Documentation</a>
+    <a href="#">Support</a>
+    <a href="#">Discord</a>
+  </div>
+  <div class="footer-copy">© 2026 NKSBOT · Tous droits réservés</div>
+</footer>
+
+<script>
+// Stats serveurs
+fetch('/api/stats').then(r=>r.json()).then(d=>{
+  if(d.servers) document.getElementById('stat-servers').textContent = d.servers + '+';
+}).catch(()=>{
+  document.getElementById('stat-servers').textContent = '10+';
+});
+
+// Collaborations dynamiques depuis l'API admin
+const platColors = {YouTube:'#ff0000',Twitch:'#9146ff',TikTok:'#ff0050',Instagram:'#e1306c',Twitter:'#1da1f2'};
+const platEmoji  = {YouTube:'▶',Twitch:'🎮',TikTok:'♪',Instagram:'📸',Twitter:'𝕏'};
+
+fetch('/api/collabs').then(r=>r.json()).then(collabs=>{
+  const grid  = document.getElementById('collab-grid');
+  const empty = document.getElementById('collab-empty');
+  if(!collabs || !collabs.length){ empty.style.display='block'; return; }
+  empty.style.display='none';
+  grid.innerHTML = collabs.map(c=>`
+    <div class="collab-card">
+      <div class="collab-avatar-wrap">
+        ${c.avatar ? `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : `<span>${c.emoji||'👤'}</span>`}
+        <div class="collab-plat" style="background:${platColors[c.platform]||'#555'}">${platEmoji[c.platform]||'🌐'}</div>
+      </div>
+      <div class="collab-name">${c.name}</div>
+      <div class="collab-platform">${c.platform}</div>
+      <div class="collab-credit">${c.credit||''}</div>
+    </div>
+  `).join('');
+}).catch(()=>{});
+</script>
+</body>
+</html>
