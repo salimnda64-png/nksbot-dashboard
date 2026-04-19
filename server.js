@@ -8,7 +8,7 @@ const path = require('path');
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 
 const VIEWS = path.join(__dirname, 'views');
 const PUBLIC = path.join(__dirname, 'public');
