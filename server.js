@@ -7,18 +7,13 @@ const axios = require('axios');
 const path = require('path');
 
 const app = express();
-app.set('trust proxy', 1); // Nécessaire pour HTTPS sur Render
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 10000;
 
-// ================================================================
-//  CHEMINS
-// ================================================================
-const VIEWS = path.join(__dirname, 'views');   // HTML
-const PUBLIC = path.join(__dirname, 'public'); // CSS, JS statiques
+const VIEWS  = path.join(__dirname, 'views');
+const PUBLIC = path.join(__dirname, 'public');
 
-// ================================================================
-//  SÉCURITÉ — Headers HTTP
-// ================================================================
+// ── Sécurité ──────────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -28,40 +23,38 @@ app.use((req, res, next) => {
   next();
 });
 
-// ================================================================
-//  RATE LIMITING
-// ================================================================
+// ── Rate limiting ─────────────────────────────────────────────────
 const rateLimitStore = new Map();
 function rateLimit({ windowMs, max, message }) {
   return (req, res, next) => {
-    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
+    const ip  = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
     const key = `${req.path}:${ip}`;
     const now = Date.now();
-    const record = rateLimitStore.get(key) || { count: 0, resetAt: now + windowMs };
-    if (now > record.resetAt) { record.count = 0; record.resetAt = now + windowMs; }
-    record.count++;
-    rateLimitStore.set(key, record);
-    if (record.count > max) return res.status(429).json({ error: message || 'Trop de requêtes.' });
+    const rec = rateLimitStore.get(key) || { count: 0, resetAt: now + windowMs };
+    if (now > rec.resetAt) { rec.count = 0; rec.resetAt = now + windowMs; }
+    rec.count++;
+    rateLimitStore.set(key, rec);
+    if (rec.count > max) return res.status(429).json({ error: message || 'Trop de requêtes.' });
     next();
   };
 }
-setInterval(() => { const now = Date.now(); for (const [k, v] of rateLimitStore.entries()) if (now > v.resetAt) rateLimitStore.delete(k); }, 10 * 60 * 1000);
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateLimitStore.entries()) if (now > v.resetAt) rateLimitStore.delete(k);
+}, 10 * 60 * 1000);
 
+// ✅ authLimiter augmenté à 30 pour absorber les retries Discord
 const apiLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, max: 150, message: 'Trop de requêtes API.' });
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10,  message: 'Trop de tentatives.' });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30,  message: 'Trop de tentatives.' });
 const saveLimiter = rateLimit({ windowMs: 60 * 1000,      max: 20,  message: 'Trop de sauvegardes.' });
 
-// ================================================================
-//  MONGODB
-// ================================================================
+// ── MongoDB ───────────────────────────────────────────────────────
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Dashboard MongoDB OK'))
   .catch(err => console.error('❌ MongoDB:', err.message));
 
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
-
-// ✅ Sert UNIQUEMENT le dossier public/ — jamais la racine (évite .env exposé)
 app.use(express.static(PUBLIC));
 
 app.use(session({
@@ -73,13 +66,11 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: 'lax',
-    secure: true, // Render utilise HTTPS
+    secure: true,
   },
 }));
 
-// ================================================================
-//  MIDDLEWARES AUTH
-// ================================================================
+// ── Auth middlewares ──────────────────────────────────────────────
 function requireAuth(req, res, next) {
   if (req.session.user) return next();
   res.redirect('/login');
@@ -96,39 +87,31 @@ async function requireAdmin(req, res, next) {
 
 const CALLBACK_URL = process.env.DISCORD_CALLBACK_URL || `http://localhost:${PORT}/auth/callback`;
 
-// ================================================================
-//  SCHÉMAS MONGOOSE
-// ================================================================
-const GuildSchema = new mongoose.Schema({}, { strict: false });
+// ── Schémas Mongoose ──────────────────────────────────────────────
+const GuildSchema      = new mongoose.Schema({}, { strict: false });
 const PaymentLogSchema = new mongoose.Schema({
   guildId: String, guildName: String, userId: String, username: String,
   method: String, amount: Number, note: String, expiresAt: Date,
   createdAt: { type: Date, default: Date.now },
 });
+const CollabSchema = new mongoose.Schema({
+  name: String, platform: String, emoji: String,
+  avatar: String, credit: String,
+  order: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+});
 function getGuild()      { return mongoose.models.Guild      || mongoose.model('Guild',      GuildSchema); }
 function getPaymentLog() { return mongoose.models.PaymentLog || mongoose.model('PaymentLog', PaymentLogSchema); }
+function getCollab()     { return mongoose.models.Collab     || mongoose.model('Collab',     CollabSchema); }
 
-// ================================================================
-//  AUTH DISCORD
-// ================================================================
-app.get('/auth/discord', authLimiter, (req, res) => {
-  const params = new URLSearchParams({
-    client_id: process.env.DISCORD_CLIENT_ID,
-    redirect_uri: CALLBACK_URL,
-    response_type: 'code',
-    scope: 'identify guilds',
-  });
-  res.redirect('https://discord.com/api/oauth2/authorize?' + params.toString());
-});
-
-// ✅ FIX : retry avec backoff exponentiel sur rate limit Discord (429)
+// ── Discord request avec retry backoff ───────────────────────────
 async function discordRequest(fn, retries = 4) {
   let delay = 2000;
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
     } catch (err) {
-      const status = err.response?.status || err.response?.data?.status;
+      const status     = err.response?.status || err.response?.data?.status;
       const retryAfter = err.response?.data?.retry_after || err.response?.headers?.['retry-after'];
       if ((status === 429 || status === 503) && i < retries) {
         const wait = retryAfter ? parseInt(retryAfter) * 1000 + 500 : delay;
@@ -142,13 +125,24 @@ async function discordRequest(fn, retries = 4) {
   }
 }
 
+// ── Auth Discord ──────────────────────────────────────────────────
+app.get('/auth/discord', authLimiter, (req, res) => {
+  const params = new URLSearchParams({
+    client_id:     process.env.DISCORD_CLIENT_ID,
+    redirect_uri:  CALLBACK_URL,
+    response_type: 'code',
+    scope:         'identify guilds',
+  });
+  res.redirect('https://discord.com/api/oauth2/authorize?' + params.toString());
+});
+
+// ✅ Requêtes séquentielles + retry automatique
 app.get('/auth/callback', authLimiter, async (req, res) => {
   const { code, error } = req.query;
-  if (error) return res.redirect('/login?error=' + error);
+  if (error) return res.redirect('/login?error=' + encodeURIComponent(error));
   if (!code)  return res.redirect('/login');
 
   try {
-    // Étape 1 — Échange du code contre un access token
     const tokenRes = await discordRequest(() => axios.post(
       'https://discord.com/api/oauth2/token',
       new URLSearchParams({
@@ -158,22 +152,21 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
         code,
         redirect_uri:  CALLBACK_URL,
       }),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10000 }
     ));
+
     const { access_token } = tokenRes.data;
     const headers = { Authorization: `Bearer ${access_token}` };
 
-    // Étape 2 — Infos utilisateur (séquentiel pour éviter le double rate-limit)
     const userRes = await discordRequest(() =>
-      axios.get('https://discord.com/api/users/@me', { headers })
+      axios.get('https://discord.com/api/users/@me', { headers, timeout: 8000 })
     );
 
-    // Étape 3 — Petit délai avant la 2e requête
-    await new Promise(r => setTimeout(r, 600));
+    // Délai anti rate-limit entre les 2 requêtes
+    await new Promise(r => setTimeout(r, 800));
 
-    // Étape 4 — Guilds de l'utilisateur
     const guildsRes = await discordRequest(() =>
-      axios.get('https://discord.com/api/users/@me/guilds', { headers })
+      axios.get('https://discord.com/api/users/@me/guilds', { headers, timeout: 8000 })
     );
 
     req.session.user = {
@@ -198,48 +191,55 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
 
 app.get('/auth/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
-// ================================================================
-//  PAGES HTML — servies depuis views/
-// ================================================================
+// ── Pages HTML ────────────────────────────────────────────────────
 app.get('/',                   (req, res) => res.redirect('/login'));
 app.get('/login',              (req, res) => res.sendFile(path.join(VIEWS, 'login.html')));
 app.get('/dashboard',          requireAuth, (req, res) => res.sendFile(path.join(VIEWS, 'dashboard.html')));
 app.get('/dashboard/:guildId', requireAuth, requireAdmin, (req, res) => res.sendFile(path.join(VIEWS, 'guild.html')));
-app.get('/admin',              requireAuth, (req, res) => {
+app.get('/admin', requireAuth, (req, res) => {
   if (req.session.user?.id !== process.env.OWNER_DISCORD_ID) return res.redirect('/dashboard');
   res.sendFile(path.join(VIEWS, 'admin.html'));
 });
 
-// ================================================================
-//  API — Utilisateur
-// ================================================================
+// ── API Utilisateur ───────────────────────────────────────────────
 app.get('/api/me', requireAuth, apiLimiter, (req, res) => {
   const u = req.session.user;
   res.json({ id: u.id, username: u.username, avatar: u.avatar, guilds: u.guilds, isOwner: u.id === process.env.OWNER_DISCORD_ID });
 });
 
+// Cache bot guilds 5 minutes
+let botGuildCache = { ids: new Set(), expiresAt: 0 };
+
 app.get('/api/guilds', requireAuth, apiLimiter, async (req, res) => {
   try {
-    const Guild = getGuild();
+    const Guild       = getGuild();
     const adminGuilds = req.session.user.guilds.filter(g => (g.permissions & 0x8) === 0x8 || g.owner);
-    const dbGuilds = await Guild.find({ guildId: { $in: adminGuilds.map(g => g.id) } });
-    let botGuildIds = new Set(dbGuilds.map(db => db.guildId));
-    try {
-      const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
-      botGuilds.data.forEach(g => botGuildIds.add(g.id));
-    } catch {}
+    const dbGuilds    = await Guild.find({ guildId: { $in: adminGuilds.map(g => g.id) } });
+    let botGuildIds   = new Set(dbGuilds.map(db => db.guildId));
+
+    const now = Date.now();
+    if (now > botGuildCache.expiresAt) {
+      try {
+        const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
+          headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN }, timeout: 5000,
+        });
+        botGuildCache.ids      = new Set(botGuilds.data.map(g => g.id));
+        botGuildCache.expiresAt = now + 5 * 60 * 1000;
+      } catch {}
+    }
+    botGuildCache.ids.forEach(id => botGuildIds.add(id));
+
     res.json(adminGuilds.map(g => ({
       ...g,
       botPresent: botGuildIds.has(g.id),
-      premium: dbGuilds.find(db => db.guildId === g.id)?.premium || false,
+      premium:    dbGuilds.find(db => db.guildId === g.id)?.premium || false,
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/guild/:guildId', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
-    const Guild = getGuild();
-    let guild = await Guild.findOne({ guildId: req.params.guildId });
+    let guild = await getGuild().findOne({ guildId: req.params.guildId });
     if (!guild) guild = { guildId: req.params.guildId };
     res.json(guild);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -247,15 +247,15 @@ app.get('/api/guild/:guildId', requireAuth, requireAdmin, apiLimiter, async (req
 
 app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (req, res) => {
   try {
-    const Guild = getGuild();
-    const guild = await Guild.findOne({ guildId: req.params.guildId });
+    const Guild     = getGuild();
+    const guild     = await Guild.findOne({ guildId: req.params.guildId });
     const isPremium = guild?.premium && guild?.premiumExpires > new Date();
-    const body = { ...req.body, updatedAt: new Date() };
+    const body      = { ...req.body, updatedAt: new Date() };
     if (!isPremium) {
       delete body.aiMemory;
       delete body.tempVoice;
       delete body.botStatus;
-      // socialNotifs conservé pour tous les plans
+      // ✅ socialNotifs conservé pour tous les plans
       if (body.tickets) body.tickets.maxOpen = Math.min(body.tickets.maxOpen || 5, 5);
     }
     await Guild.findOneAndUpdate({ guildId: req.params.guildId }, body, { upsert: true });
@@ -265,14 +265,18 @@ app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (r
 
 app.get('/api/guild/:guildId/channels', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
-    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/channels`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
+    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/channels`, {
+      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN }, timeout: 5000,
+    });
     res.json(r.data.filter(c => c.type === 0 || c.type === 2 || c.type === 4).map(c => ({ id: c.id, name: c.name, type: c.type })));
   } catch { res.status(500).json({ error: 'Erreur channels' }); }
 });
 
 app.get('/api/guild/:guildId/roles', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
-    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
+    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, {
+      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN }, timeout: 5000,
+    });
     res.json(r.data.filter(r => r.name !== '@everyone').map(r => ({ id: r.id, name: r.name })));
   } catch { res.status(500).json({ error: 'Erreur roles' }); }
 });
@@ -285,28 +289,26 @@ app.post('/api/guild/:guildId/send-message', requireAuth, requireAdmin, saveLimi
     if (content) payload.content = content;
     if (embed && (embed.title || embed.description)) {
       payload.embeds = [{
-        title: embed.title || undefined,
+        title:       embed.title       || undefined,
         description: embed.description || undefined,
-        color: embed.color ? parseInt(embed.color.replace('#', ''), 16) : 0x7c3aed,
-        image: embed.imageUrl ? { url: embed.imageUrl } : undefined,
-        footer: embed.footer ? { text: embed.footer } : undefined,
-        thumbnail: embed.thumbnailUrl ? { url: embed.thumbnailUrl } : undefined,
+        color:       embed.color ? parseInt(embed.color.replace('#', ''), 16) : 0x7c3aed,
+        image:       embed.imageUrl     ? { url: embed.imageUrl }     : undefined,
+        footer:      embed.footer       ? { text: embed.footer }      : undefined,
+        thumbnail:   embed.thumbnailUrl ? { url: embed.thumbnailUrl } : undefined,
       }];
     }
     if (!payload.content && !payload.embeds) return res.status(400).json({ error: 'Contenu requis' });
     await axios.post(`https://discord.com/api/v10/channels/${channelId}/messages`, payload, {
-      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN, 'Content-Type': 'application/json' }
+      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 5000,
     });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Erreur envoi message' }); }
 });
 
-// ================================================================
-//  API — Mémoire IA (Premium)
-// ================================================================
+// ── API Mémoire IA ────────────────────────────────────────────────
 app.get('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
-    const guild = await getGuild().findOne({ guildId: req.params.guildId });
+    const guild     = await getGuild().findOne({ guildId: req.params.guildId });
     const isPremium = guild?.premium && guild?.premiumExpires > new Date();
     if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
     res.json({ memory: guild?.aiMemory || [] });
@@ -315,8 +317,8 @@ app.get('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, apiLimiter, 
 
 app.post('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, saveLimiter, async (req, res) => {
   try {
-    const Guild = getGuild();
-    const guild = await Guild.findOne({ guildId: req.params.guildId });
+    const Guild     = getGuild();
+    const guild     = await Guild.findOne({ guildId: req.params.guildId });
     const isPremium = guild?.premium && guild?.premiumExpires > new Date();
     if (!isPremium) return res.status(403).json({ error: 'Premium requis' });
     const { action, fact, index } = req.body;
@@ -336,15 +338,13 @@ app.post('/api/guild/:guildId/ai-memory', requireAuth, requireAdmin, saveLimiter
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ================================================================
-//  API — Admin
-// ================================================================
+// ── API Admin ─────────────────────────────────────────────────────
 app.get('/api/admin/stats', requireAuth, requireOwner, async (req, res) => {
   try {
-    const allGuilds = await getGuild().find({});
+    const allGuilds     = await getGuild().find({});
     const premiumGuilds = allGuilds.filter(g => g.premium && g.premiumExpires > new Date());
-    const logs = await getPaymentLog().find({}).sort({ createdAt: -1 }).limit(10);
-    const rev = await getPaymentLog().aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]);
+    const logs          = await getPaymentLog().find({}).sort({ createdAt: -1 }).limit(10);
+    const rev           = await getPaymentLog().aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]);
     res.json({ totalGuilds: allGuilds.length, premiumGuilds: premiumGuilds.length, totalRevenue: rev[0]?.total || 0, recentActivations: logs });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -352,7 +352,7 @@ app.get('/api/admin/stats', requireAuth, requireOwner, async (req, res) => {
 app.get('/api/admin/premium', requireAuth, requireOwner, async (req, res) => {
   try {
     const guilds = await getGuild().find({ premium: true }).sort({ premiumExpires: 1 });
-    const logs = await getPaymentLog().find({}).sort({ createdAt: -1 });
+    const logs   = await getPaymentLog().find({}).sort({ createdAt: -1 });
     res.json({ guilds, logs });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -362,7 +362,11 @@ app.post('/api/admin/premium/activate', requireAuth, requireOwner, async (req, r
     const { guildId, guildName, userId, username, days, method, amount, note } = req.body;
     if (!guildId) return res.status(400).json({ error: 'Guild ID requis' });
     const expires = new Date(Date.now() + (days || 30) * 24 * 60 * 60 * 1000);
-    await getGuild().findOneAndUpdate({ guildId }, { premium: true, premiumExpires: expires, guildName: guildName || undefined, premiumNote: note || undefined }, { upsert: true });
+    await getGuild().findOneAndUpdate(
+      { guildId },
+      { premium: true, premiumExpires: expires, guildName: guildName || undefined, premiumNote: note || undefined },
+      { upsert: true }
+    );
     await getPaymentLog().create({ guildId, guildName, userId, username, method, amount, note, expiresAt: expires });
     res.json({ success: true, expiresAt: expires });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -384,18 +388,46 @@ app.get('/api/admin/search-user', requireAuth, requireOwner, async (req, res) =>
   try {
     const q = req.query.q?.trim();
     if (!q) return res.json({ logs: [] });
-    const logs = await getPaymentLog().find({ $or: [{ guildId: q }, { userId: q }, { username: { $regex: q, $options: 'i' } }, { guildName: { $regex: q, $options: 'i' } }] }).sort({ createdAt: -1 });
+    const logs = await getPaymentLog().find({
+      $or: [{ guildId: q }, { userId: q }, { username: { $regex: q, $options: 'i' } }, { guildName: { $regex: q, $options: 'i' } }]
+    }).sort({ createdAt: -1 });
     res.json({ logs });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ================================================================
-//  ERREURS
-// ================================================================
+// ── API Stats & Collabs (landing page) ───────────────────────────
+app.get('/api/stats', async (req, res) => {
+  try { res.json({ servers: await getGuild().countDocuments() }); }
+  catch { res.json({ servers: 0 }); }
+});
+
+app.get('/api/collabs', async (req, res) => {
+  try { res.json(await getCollab().find({}).sort({ order: 1, createdAt: -1 })); }
+  catch { res.json([]); }
+});
+
+app.post('/api/admin/collabs', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const { name, platform, emoji, avatar, credit } = req.body;
+    if (!name || !platform) return res.status(400).json({ error: 'Nom et plateforme requis' });
+    const c = new (getCollab())({ name, platform, emoji: emoji || '👤', avatar: avatar || '', credit: credit || '' });
+    await c.save();
+    res.json({ success: true, collab: c });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/collabs/:id', requireAuth, requireOwner, async (req, res) => {
+  try {
+    await getCollab().findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Erreurs ───────────────────────────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: 'Route introuvable' }));
 app.use((err, req, res, next) => { console.error(err.message); res.status(500).json({ error: 'Erreur interne' }); });
 
-app.listen(PORT, () => {
-  console.log(`🌐 Dashboard sur http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🌐 Dashboard sur http://0.0.0.0:${PORT}`);
   console.log(`👑 Owner ID: ${process.env.OWNER_DISCORD_ID}`);
 });
