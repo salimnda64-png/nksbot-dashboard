@@ -7,14 +7,17 @@ const axios = require('axios');
 const path = require('path');
 
 const app = express();
-app.set('trust proxy', 1);
-const PORT = process.env.PORT || 3000;
-
-const VIEWS = path.join(__dirname, 'views');
-const PUBLIC = path.join(__dirname, 'public');
+app.set('trust proxy', 1); // Nécessaire pour HTTPS sur Render
+const PORT = process.env.PORT || 10000;
 
 // ================================================================
-//  SÉCURITÉ
+//  CHEMINS
+// ================================================================
+const VIEWS = path.join(__dirname, 'views');   // HTML
+const PUBLIC = path.join(__dirname, 'public'); // CSS, JS statiques
+
+// ================================================================
+//  SÉCURITÉ — Headers HTTP
 // ================================================================
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -45,7 +48,7 @@ function rateLimit({ windowMs, max, message }) {
 setInterval(() => { const now = Date.now(); for (const [k, v] of rateLimitStore.entries()) if (now > v.resetAt) rateLimitStore.delete(k); }, 10 * 60 * 1000);
 
 const apiLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, max: 150, message: 'Trop de requêtes API.' });
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20,  message: 'Trop de tentatives.' });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10,  message: 'Trop de tentatives.' });
 const saveLimiter = rateLimit({ windowMs: 60 * 1000,      max: 20,  message: 'Trop de sauvegardes.' });
 
 // ================================================================
@@ -57,6 +60,8 @@ mongoose.connect(process.env.MONGODB_URI)
 
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+
+// ✅ Sert UNIQUEMENT le dossier public/ — jamais la racine (évite .env exposé)
 app.use(express.static(PUBLIC));
 
 app.use(session({
@@ -67,8 +72,8 @@ app.use(session({
   cookie: {
     maxAge: 7 * 24 * 60 * 60 * 1000,
     httpOnly: true,
-    sameSite: 'none',
-    secure: true,
+    sameSite: 'lax',
+    secure: true, // Render utilise HTTPS
   },
 }));
 
@@ -100,15 +105,8 @@ const PaymentLogSchema = new mongoose.Schema({
   method: String, amount: Number, note: String, expiresAt: Date,
   createdAt: { type: Date, default: Date.now },
 });
-const CollabSchema = new mongoose.Schema({
-  name: String, platform: String,
-  emoji: String, avatar: String,
-  credit: String, order: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now },
-});
 function getGuild()      { return mongoose.models.Guild      || mongoose.model('Guild',      GuildSchema); }
 function getPaymentLog() { return mongoose.models.PaymentLog || mongoose.model('PaymentLog', PaymentLogSchema); }
-function getCollab()     { return mongoose.models.Collab     || mongoose.model('Collab',     CollabSchema); }
 
 // ================================================================
 //  AUTH DISCORD
@@ -123,44 +121,66 @@ app.get('/auth/discord', authLimiter, (req, res) => {
   res.redirect('https://discord.com/api/oauth2/authorize?' + params.toString());
 });
 
+// ✅ FIX : retry avec backoff exponentiel sur rate limit Discord (429)
+async function discordRequest(fn, retries = 4) {
+  let delay = 2000;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err.response?.status || err.response?.data?.status;
+      const retryAfter = err.response?.data?.retry_after || err.response?.headers?.['retry-after'];
+      if ((status === 429 || status === 503) && i < retries) {
+        const wait = retryAfter ? parseInt(retryAfter) * 1000 + 500 : delay;
+        console.warn(`[Discord] Rate limited, retry ${i+1}/${retries} dans ${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+        delay = Math.min(delay * 2, 30000);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 app.get('/auth/callback', authLimiter, async (req, res) => {
-  const { code } = req.query;
-  if (!code) return res.redirect('/login');
+  const { code, error } = req.query;
+  if (error) return res.redirect('/login?error=' + error);
+  if (!code)  return res.redirect('/login');
 
   try {
-    const tokenRes = await axios.post(
+    // Étape 1 — Échange du code contre un access token
+    const tokenRes = await discordRequest(() => axios.post(
       'https://discord.com/api/oauth2/token',
       new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID,
+        client_id:     process.env.DISCORD_CLIENT_ID,
         client_secret: process.env.DISCORD_CLIENT_SECRET,
-        grant_type: 'authorization_code',
+        grant_type:    'authorization_code',
         code,
-        redirect_uri: CALLBACK_URL,
+        redirect_uri:  CALLBACK_URL,
       }),
-      {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 8000,
-      }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    ));
+    const { access_token } = tokenRes.data;
+    const headers = { Authorization: `Bearer ${access_token}` };
+
+    // Étape 2 — Infos utilisateur (séquentiel pour éviter le double rate-limit)
+    const userRes = await discordRequest(() =>
+      axios.get('https://discord.com/api/users/@me', { headers })
     );
 
-    const { access_token } = tokenRes.data;
+    // Étape 3 — Petit délai avant la 2e requête
+    await new Promise(r => setTimeout(r, 600));
 
-    const [userRes, guildsRes] = await Promise.all([
-      axios.get('https://discord.com/api/users/@me', {
-        headers: { Authorization: `Bearer ${access_token}` },
-        timeout: 5000,
-      }),
-      axios.get('https://discord.com/api/users/@me/guilds', {
-        headers: { Authorization: `Bearer ${access_token}` },
-        timeout: 5000,
-      }),
-    ]);
+    // Étape 4 — Guilds de l'utilisateur
+    const guildsRes = await discordRequest(() =>
+      axios.get('https://discord.com/api/users/@me/guilds', { headers })
+    );
 
     req.session.user = {
-      id: userRes.data.id,
+      id:       userRes.data.id,
       username: userRes.data.username,
-      avatar: userRes.data.avatar,
-      guilds: guildsRes.data,
+      avatar:   userRes.data.avatar,
+      guilds:   guildsRes.data,
     };
 
     await new Promise((resolve, reject) =>
@@ -169,6 +189,7 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
 
     if (userRes.data.id === process.env.OWNER_DISCORD_ID) return res.redirect('/admin');
     res.redirect('/dashboard');
+
   } catch (err) {
     console.error('OAuth2:', err.response?.data || err.message);
     res.redirect('/login?error=oauth');
@@ -178,7 +199,7 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
 app.get('/auth/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
 // ================================================================
-//  PAGES HTML
+//  PAGES HTML — servies depuis views/
 // ================================================================
 app.get('/',                   (req, res) => res.redirect('/login'));
 app.get('/login',              (req, res) => res.sendFile(path.join(VIEWS, 'login.html')));
@@ -197,29 +218,16 @@ app.get('/api/me', requireAuth, apiLimiter, (req, res) => {
   res.json({ id: u.id, username: u.username, avatar: u.avatar, guilds: u.guilds, isOwner: u.id === process.env.OWNER_DISCORD_ID });
 });
 
-// Cache bot guilds 5 minutes
-let botGuildCache = { ids: new Set(), expiresAt: 0 };
-
 app.get('/api/guilds', requireAuth, apiLimiter, async (req, res) => {
   try {
     const Guild = getGuild();
     const adminGuilds = req.session.user.guilds.filter(g => (g.permissions & 0x8) === 0x8 || g.owner);
     const dbGuilds = await Guild.find({ guildId: { $in: adminGuilds.map(g => g.id) } });
     let botGuildIds = new Set(dbGuilds.map(db => db.guildId));
-
-    const now = Date.now();
-    if (now > botGuildCache.expiresAt) {
-      try {
-        const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
-          headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN },
-          timeout: 5000,
-        });
-        botGuildCache.ids = new Set(botGuilds.data.map(g => g.id));
-        botGuildCache.expiresAt = now + 5 * 60 * 1000;
-      } catch {}
-    }
-    botGuildCache.ids.forEach(id => botGuildIds.add(id));
-
+    try {
+      const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
+      botGuilds.data.forEach(g => botGuildIds.add(g.id));
+    } catch {}
     res.json(adminGuilds.map(g => ({
       ...g,
       botPresent: botGuildIds.has(g.id),
@@ -247,6 +255,7 @@ app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (r
       delete body.aiMemory;
       delete body.tempVoice;
       delete body.botStatus;
+      // socialNotifs conservé pour tous les plans
       if (body.tickets) body.tickets.maxOpen = Math.min(body.tickets.maxOpen || 5, 5);
     }
     await Guild.findOneAndUpdate({ guildId: req.params.guildId }, body, { upsert: true });
@@ -256,20 +265,14 @@ app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (r
 
 app.get('/api/guild/:guildId/channels', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
-    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/channels`, {
-      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN },
-      timeout: 5000,
-    });
+    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/channels`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
     res.json(r.data.filter(c => c.type === 0 || c.type === 2 || c.type === 4).map(c => ({ id: c.id, name: c.name, type: c.type })));
   } catch { res.status(500).json({ error: 'Erreur channels' }); }
 });
 
 app.get('/api/guild/:guildId/roles', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
-    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, {
-      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN },
-      timeout: 5000,
-    });
+    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
     res.json(r.data.filter(r => r.name !== '@everyone').map(r => ({ id: r.id, name: r.name })));
   } catch { res.status(500).json({ error: 'Erreur roles' }); }
 });
@@ -292,8 +295,7 @@ app.post('/api/guild/:guildId/send-message', requireAuth, requireAdmin, saveLimi
     }
     if (!payload.content && !payload.embeds) return res.status(400).json({ error: 'Contenu requis' });
     await axios.post(`https://discord.com/api/v10/channels/${channelId}/messages`, payload, {
-      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN, 'Content-Type': 'application/json' },
-      timeout: 5000,
+      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN, 'Content-Type': 'application/json' }
     });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Erreur envoi message' }); }
@@ -388,46 +390,12 @@ app.get('/api/admin/search-user', requireAuth, requireOwner, async (req, res) =>
 });
 
 // ================================================================
-//  API — Stats & Collabs
-// ================================================================
-app.get('/api/stats', async (req, res) => {
-  try {
-    const total = await getGuild().countDocuments();
-    res.json({ servers: total });
-  } catch { res.json({ servers: 0 }); }
-});
-
-app.get('/api/collabs', async (req, res) => {
-  try {
-    const collabs = await getCollab().find({}).sort({ order: 1, createdAt: -1 });
-    res.json(collabs);
-  } catch { res.json([]); }
-});
-
-app.post('/api/admin/collabs', requireAuth, requireOwner, async (req, res) => {
-  try {
-    const { name, platform, emoji, avatar, credit } = req.body;
-    if (!name || !platform) return res.status(400).json({ error: 'Nom et plateforme requis' });
-    const c = new (getCollab())({ name, platform, emoji: emoji || '👤', avatar: avatar || '', credit: credit || '' });
-    await c.save();
-    res.json({ success: true, collab: c });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.delete('/api/admin/collabs/:id', requireAuth, requireOwner, async (req, res) => {
-  try {
-    await getCollab().findByIdAndDelete(req.params.id);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// ================================================================
 //  ERREURS
 // ================================================================
 app.use((req, res) => res.status(404).json({ error: 'Route introuvable' }));
 app.use((err, req, res, next) => { console.error(err.message); res.status(500).json({ error: 'Erreur interne' }); });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🌐 Dashboard sur http://0.0.0.0:${PORT}`);
+app.listen(PORT, () => {
+  console.log(`🌐 Dashboard sur http://localhost:${PORT}`);
   console.log(`👑 Owner ID: ${process.env.OWNER_DISCORD_ID}`);
 });
