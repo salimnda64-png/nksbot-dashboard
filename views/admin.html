@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NKSBOT — Panel Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --blue:#3b82f6;--violet:#7c3aed;--cyan:#06b6d4;
+  --gold:#f59e0b;--green:#22c55e;--red:#ef4444;
+  --bg:#040710;--bg2:#070c1a;--bg3:#0c1427;--bg4:#101d35;
+  --text:#e2e8f8;--muted:#6b7fa8;--dim:#35456a;
+  --border:rgba(255,255,255,0.07);--border-b:rgba(59,130,246,0.2);--border-v:rgba(124,58,237,0.2);
+  --card:rgba(12,20,39,0.95);
+  --font-d:'Syne',sans-serif;--font-b:'DM Sans',sans-serif;--font-m:'JetBrains Mono',monospace;
+  --r:12px;--rl:18px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--font-b);min-height:100vh;font-size:14px}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E")}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border-b);border-radius:4px}
+a{color:inherit;text-decoration:none}
+
+/* ── LAYOUT ── */
+.layout{display:flex;min-height:100vh;position:relative;z-index:1}
+
+/* ── SIDEBAR ── */
+.sidebar{
+  width:240px;background:var(--bg2);
+  border-right:1px solid var(--border);
+  padding:0;display:flex;flex-direction:column;
+  position:fixed;top:0;left:0;bottom:0;z-index:10;
+}
+.sidebar-top{padding:1.6rem 1.2rem 1.2rem;border-bottom:1px solid var(--border)}
+.sidebar-logo{
+  font-family:var(--font-d);font-size:1.3rem;font-weight:800;
+  background:linear-gradient(135deg,#fff 30%,#a78bfa);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:0.3rem;
+}
+.sidebar-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);
+  color:var(--gold);font-size:0.68rem;font-weight:700;font-family:var(--font-m);
+  padding:2px 8px;border-radius:4px;-webkit-text-fill-color:var(--gold);
+}
+.sidebar-nav{padding:1rem 0.8rem;flex:1;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.nav-label{font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--dim);padding:0.6rem 0.8rem 0.3rem;font-weight:700}
+.nav-item{
+  display:flex;align-items:center;gap:0.7rem;
+  padding:0.65rem 0.8rem;border-radius:var(--r);
+  cursor:pointer;color:var(--muted);font-size:0.875rem;font-weight:500;
+  transition:all 0.18s;border:none;background:transparent;
+  width:100%;text-align:left;position:relative;
+}
+.nav-item:hover{background:rgba(59,130,246,0.07);color:var(--text)}
+.nav-item.active{background:linear-gradient(135deg,rgba(59,130,246,0.12),rgba(124,58,237,0.08));color:#fff}
+.nav-item.active::before{content:'';position:absolute;left:0;top:20%;bottom:20%;width:3px;background:linear-gradient(to bottom,var(--blue),var(--violet));border-radius:0 3px 3px 0}
+.nav-item.danger{color:#f87171}
+.nav-item.danger:hover{background:rgba(239,68,68,0.08);color:#fca5a5}
+.nav-sep{height:1px;background:var(--border);margin:0.5rem 0.8rem}
+.nav-icon{font-size:1rem;width:18px;text-align:center}
+.sidebar-user{padding:1rem 1.2rem;border-top:1px solid var(--border);display:flex;align-items:center;gap:0.7rem}
+.user-av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;flex-shrink:0}
+.user-nm{font-size:0.82rem;font-weight:600;color:var(--text)}
+.user-role{font-size:0.7rem;color:var(--gold)}
+
+/* ── MAIN ── */
+.main{margin-left:240px;flex:1;display:flex;flex-direction:column}
+.topbar{
+  padding:1.2rem 2rem;
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  background:rgba(7,12,26,0.8);backdrop-filter:blur(10px);
+  position:sticky;top:0;z-index:5;
+}
+.page-title{font-family:var(--font-d);font-size:1.3rem;font-weight:800;color:#fff}
+.topbar-right{display:flex;align-items:center;gap:0.7rem}
+
+/* ── PAGES ── */
+.page{display:none;padding:2rem;animation:fadeIn 0.2s ease}
+.page.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── STAT CARDS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--rl);padding:1.3rem 1.5rem;position:relative;overflow:hidden;transition:all 0.2s}
+.stat-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--blue),var(--violet),transparent);opacity:0.5}
+.stat-card.gold{border-color:rgba(245,158,11,0.25)}
+.stat-card.gold::after{background:linear-gradient(90deg,var(--gold),transparent)}
+.stat-card.green{border-color:rgba(34,197,94,0.25)}
+.stat-card.green::after{background:linear-gradient(90deg,var(--green),transparent)}
+.s-label{font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:0.5rem}
+.s-val{font-family:var(--font-d);font-size:2rem;font-weight:800;color:#fff;line-height:1}
+.s-val.gold{color:var(--gold)}
+.s-val.green{color:var(--green)}
+.s-val.violet{color:#a78bfa}
+.s-sub{font-size:0.75rem;color:var(--dim);margin-top:0.3rem}
+
+/* ── TABLE ── */
+.table-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:1.5rem}
+.table-head{padding:1rem 1.4rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.table-head h3{font-family:var(--font-d);font-size:0.95rem;font-weight:700;color:var(--text)}
+table{width:100%;border-collapse:collapse}
+th{padding:0.75rem 1.2rem;text-align:left;font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--border);font-weight:700}
+td{padding:0.85rem 1.2rem;font-size:0.85rem;border-bottom:1px solid rgba(255,255,255,0.03)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(59,130,246,0.03)}
+.mono{font-family:var(--font-m);font-size:0.8rem}
+
+/* ── BADGES ── */
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:20px}
+.badge-premium{background:rgba(245,158,11,0.1);color:var(--gold);border:1px solid rgba(245,158,11,0.25)}
+.badge-free{background:rgba(59,130,246,0.1);color:var(--blue);border:1px solid var(--border-b)}
+.badge-active{background:rgba(34,197,94,0.1);color:var(--green);border:1px solid rgba(34,197,94,0.2)}
+
+/* ── FORM CARD ── */
+.form-card{background:var(--card);border:1px solid var(--border);border-radius:var(--rl);padding:1.6rem;margin-bottom:1.2rem}
+.form-card h3{font-family:var(--font-d);font-size:1rem;font-weight:700;color:var(--text);margin-bottom:1.2rem;display:flex;align-items:center;gap:0.5rem}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.9rem}
+.form-group{display:flex;flex-direction:column;gap:0.4rem}
+.form-group label{font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em}
+.form-group input,.form-group select,.form-group textarea{
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:9px;
+  padding:0.6rem 0.9rem;color:var(--text);font-family:var(--font-b);font-size:0.88rem;
+  outline:none;transition:border-color 0.2s,box-shadow 0.2s;width:100%;
+}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:rgba(59,130,246,0.45);box-shadow:0 0 0 3px rgba(59,130,246,0.08)}
+.form-group select{cursor:pointer}
+.form-full{grid-column:1/-1}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.55rem 1.1rem;border-radius:9px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all 0.2s;border:1px solid transparent;font-family:var(--font-b)}
+.btn-primary{background:linear-gradient(135deg,var(--blue),var(--violet));color:#fff;box-shadow:0 0 20px rgba(59,130,246,0.2)}
+.btn-primary:hover{box-shadow:0 0 30px rgba(59,130,246,0.35);transform:translateY(-1px)}
+.btn-violet{background:linear-gradient(135deg,var(--violet),#a855f7);color:#fff;box-shadow:0 0 20px rgba(124,58,237,0.2)}
+.btn-violet:hover{box-shadow:0 0 30px rgba(124,58,237,0.35);transform:translateY(-1px)}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--muted)}
+.btn-ghost:hover{background:var(--bg4);color:var(--text);border-color:var(--border-b)}
+.btn-danger{background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.2);color:#f87171}
+.btn-danger:hover{background:rgba(239,68,68,0.15);box-shadow:0 0 15px rgba(239,68,68,0.15)}
+.btn-sm{padding:0.35rem 0.75rem;font-size:0.78rem;border-radius:7px}
+
+/* ── ALERT ── */
+.alert{padding:0.8rem 1.1rem;border-radius:var(--r);font-size:0.85rem;font-weight:500;margin-bottom:1rem;display:none}
+.alert.show{display:flex;align-items:center;gap:8px}
+.alert-success{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);color:var(--green)}
+.alert-error{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);color:#f87171}
+
+/* ── RECENT ITEMS ── */
+.recent-item{display:flex;align-items:center;gap:1rem;padding:0.9rem 1.4rem;border-bottom:1px solid rgba(255,255,255,0.03)}
+.recent-item:last-child{border-bottom:none}
+.recent-icon{width:36px;height:36px;border-radius:10px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
+.recent-info{flex:1}
+.recent-info strong{font-size:0.88rem;font-weight:600;color:var(--text);display:block}
+.recent-info span{font-size:0.78rem;color:var(--muted)}
+.recent-time{font-size:0.75rem;color:var(--dim)}
+
+/* ── SEARCH BAR ── */
+.search-bar{display:flex;gap:0.7rem;margin-bottom:1rem}
+.search-bar input{flex:1}
+
+/* ── COLLAB CARDS ── */
+.collab-grid-admin{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-top:1rem}
+.collab-item{background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:var(--r);padding:1rem;display:flex;align-items:center;gap:0.9rem;transition:all 0.2s}
+.collab-item:hover{border-color:var(--border-b)}
+.collab-av{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--violet));display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;overflow:hidden}
+.collab-av img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.collab-info{flex:1;min-width:0}
+.collab-nm{font-size:0.88rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.collab-pl{font-size:0.75rem;color:var(--muted)}
+
+@media(max-width:768px){.sidebar{display:none}.main{margin-left:0}.stats-grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ── SIDEBAR ── -->
+<aside class="sidebar">
+  <div class="sidebar-top">
+    <div class="sidebar-logo">NKSBOT</div>
+    <div class="sidebar-badge">👑 ADMIN</div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-label">Tableau de bord</div>
+    <button class="nav-item active" onclick="showPage('overview')">
+      <span class="nav-icon">📊</span> Vue d'ensemble
+    </button>
+    <button class="nav-item" onclick="showPage('premium')">
+      <span class="nav-icon">⭐</span> Gestion Premium
+    </button>
+    <button class="nav-item" onclick="showPage('guilds')">
+      <span class="nav-icon">🏰</span> Tous les serveurs
+    </button>
+    <button class="nav-item" onclick="showPage('search')">
+      <span class="nav-icon">🔍</span> Recherche
+    </button>
+    <button class="nav-item" onclick="showPage('logs')">
+      <span class="nav-icon">📋</span> Logs paiements
+    </button>
+
+    <div class="nav-sep"></div>
+    <div class="nav-label">Landing Page</div>
+    <button class="nav-item" onclick="showPage('collabs')">
+      <span class="nav-icon">🤝</span> Collaborations
+    </button>
+
+    <div class="nav-sep"></div>
+    <button class="nav-item" onclick="location.href='/dashboard'">
+      <span class="nav-icon">🖥️</span> Dashboard
+    </button>
+    <button class="nav-item" onclick="location.href='/'">
+      <span class="nav-icon">🌐</span> Landing page
+    </button>
+    <button class="nav-item danger" onclick="location.href='/auth/logout'">
+      <span class="nav-icon">🚪</span> Déconnexion
+    </button>
+  </nav>
+
+  <div class="sidebar-user">
+    <div class="user-av" id="userAv">?</div>
+    <div>
+      <div class="user-nm" id="ownerName">Chargement…</div>
+      <div class="user-role">Owner · Admin</div>
+    </div>
+  </div>
+</aside>
+
+<!-- ── MAIN ── -->
+<div class="main">
+  <div class="topbar">
+    <div class="page-title" id="pageTitle">Vue d'ensemble</div>
+    <div class="topbar-right">
+      <span style="font-size:0.78rem;color:var(--dim);font-family:var(--font-m)">🛡️ Accès restreint</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════ OVERVIEW ═══════════════ -->
+  <div class="page active" id="page-overview">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="s-label">Serveurs total</div>
+        <div class="s-val violet" id="statTotal">—</div>
+        <div class="s-sub">dans la base de données</div>
+      </div>
+      <div class="stat-card gold">
+        <div class="s-label">Serveurs Premium</div>
+        <div class="s-val gold" id="statPremium">—</div>
+        <div class="s-sub">actifs en ce moment</div>
+      </div>
+      <div class="stat-card green">
+        <div class="s-label">Revenus totaux</div>
+        <div class="s-val green" id="statRevenue">—€</div>
+        <div class="s-sub">depuis le début</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-label">Dernière activation</div>
+        <div class="s-val" style="font-size:1rem;font-family:var(--font-b)" id="statLast">—</div>
+        <div class="s-sub" id="statLastDate">—</div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <div class="table-head"><h3>⚡ Activations récentes</h3></div>
+      <div id="recentList"><div style="padding:2rem;text-align:center;color:var(--muted)">Chargement…</div></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ PREMIUM ═══════════════ -->
+  <div class="page" id="page-premium">
+    <div class="alert" id="premiumAlert"></div>
+    <div class="form-card">
+      <h3>⭐ Activer Premium pour un serveur</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Guild ID *</label>
+          <input type="text" id="pmGuildId" placeholder="1234567890123456789">
+        </div>
+        <div class="form-group">
+          <label>Nom du serveur</label>
+          <input type="text" id="pmGuildName" placeholder="Mon Serveur Discord">
+        </div>
+        <div class="form-group">
+          <label>Discord ID utilisateur</label>
+          <input type="text" id="pmUserId" placeholder="ID Discord du payeur">
+        </div>
+        <div class="form-group">
+          <label>Username Discord</label>
+          <input type="text" id="pmUsername" placeholder="username#0000">
+        </div>
+        <div class="form-group">
+          <label>Durée</label>
+          <select id="pmDays">
+            <option value="30">30 jours (1 mois)</option>
+            <option value="90">90 jours (3 mois)</option>
+            <option value="180">180 jours (6 mois)</option>
+            <option value="365">365 jours (1 an)</option>
+            <option value="9999">À vie</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Méthode de paiement</label>
+          <select id="pmMethod">
+            <option value="PayPal">PayPal</option>
+            <option value="Virement">Virement bancaire</option>
+            <option value="Paysafecard">Paysafecard</option>
+            <option value="Crypto">Crypto</option>
+            <option value="Manuel">Manuel (offert)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Montant reçu (€)</label>
+          <input type="number" id="pmAmount" value="1.99" step="0.01" min="0">
+        </div>
+        <div class="form-group">
+          <label>Note interne</label>
+          <input type="text" id="pmNote" placeholder="ex: commande PayPal #123">
+        </div>
+      </div>
+      <div style="margin-top:1.2rem;display:flex;gap:0.7rem">
+        <button class="btn btn-primary" onclick="activatePremium()">⭐ Activer Premium</button>
+        <button class="btn btn-ghost" onclick="clearPremiumForm()">Réinitialiser</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <div class="table-head"><h3>Serveurs Premium actifs</h3></div>
+      <table>
+        <thead><tr><th>Serveur</th><th>Guild ID</th><th>Expire le</th><th>Note</th><th>Action</th></tr></thead>
+        <tbody id="premiumTable">
+          <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:2rem">Chargement…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════ GUILDS ═══════════════ -->
+  <div class="page" id="page-guilds">
+    <div class="table-wrap">
+      <div class="table-head"><h3>🏰 Tous les serveurs</h3></div>
+      <table>
+        <thead><tr><th>Serveur</th><th>Guild ID</th><th>Statut</th><th>Préfixe</th><th>Dernière MAJ</th></tr></thead>
+        <tbody id="guildsTable">
+          <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:2rem">Chargement…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════ SEARCH ═══════════════ -->
+  <div class="page" id="page-search">
+    <div class="form-card">
+      <h3>🔍 Rechercher un utilisateur / serveur</h3>
+      <div class="search-bar">
+        <input type="text" id="searchQ" placeholder="Discord ID, username, Guild ID ou nom du serveur…" onkeydown="if(event.key==='Enter')searchUser()">
+        <button class="btn btn-primary" onclick="searchUser()">Rechercher</button>
+      </div>
+      <div id="searchResults" style="color:var(--muted);font-size:0.9rem">Tape un ID ou username pour commencer.</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ LOGS ═══════════════ -->
+  <div class="page" id="page-logs">
+    <div class="table-wrap">
+      <div class="table-head"><h3>📋 Historique des paiements</h3></div>
+      <table>
+        <thead><tr><th>Date</th><th>Serveur</th><th>Utilisateur</th><th>Méthode</th><th>Montant</th><th>Expire</th></tr></thead>
+        <tbody id="logsTable">
+          <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:2rem">Chargement…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════ COLLABS ═══════════════ -->
+  <div class="page" id="page-collabs">
+    <div class="alert" id="collabAlert"></div>
+
+    <div class="form-card" style="border-color:var(--border-v)">
+      <h3>🤝 Ajouter une collaboration</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Nom du créateur *</label>
+          <input type="text" id="clName" placeholder="ex: ShixaPrime">
+        </div>
+        <div class="form-group">
+          <label>Plateforme *</label>
+          <select id="clPlatform">
+            <option value="YouTube">🎬 YouTube</option>
+            <option value="Twitch">🎮 Twitch</option>
+            <option value="TikTok">🎵 TikTok</option>
+            <option value="Instagram">📸 Instagram</option>
+            <option value="Twitter">🐦 Twitter / X</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Emoji (affiché si pas d'avatar)</label>
+          <input type="text" id="clEmoji" placeholder="ex: 🎮">
+        </div>
+        <div class="form-group">
+          <label>URL Avatar (optionnel)</label>
+          <input type="text" id="clAvatar" placeholder="https://…">
+        </div>
+        <div class="form-group form-full">
+          <label>Texte / Crédit</label>
+          <input type="text" id="clCredit" placeholder="ex: Partenaire officiel · Gaming">
+        </div>
+      </div>
+      <div style="margin-top:1.2rem;display:flex;gap:0.7rem;align-items:center">
+        <button class="btn btn-violet" onclick="addCollab()">+ Ajouter à la landing page</button>
+        <span style="font-size:0.8rem;color:var(--dim)">Visible immédiatement sur le site</span>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-head">
+        <h3>Collaborations actives</h3>
+        <span style="font-size:0.78rem;color:var(--muted)" id="collabCount">— éléments</span>
+      </div>
+      <div id="collabList">
+        <div style="padding:2.5rem;text-align:center;color:var(--dim)">Aucune collaboration pour le moment.</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+// ── Pages ────────────────────────────────────────────────────────
+const pageNames = {
+  overview:'Vue d\'ensemble',premium:'Gestion Premium',
+  guilds:'Tous les serveurs',search:'Recherche',
+  logs:'Logs paiements',collabs:'Collaborations Landing'
+};
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.getElementById('pageTitle').textContent = pageNames[name]||name;
+  // Highlight nav
+  document.querySelectorAll('.nav-item').forEach(b=>{
+    if(b.getAttribute('onclick')?.includes("'"+name+"'")) b.classList.add('active');
+  });
+  // Load data
+  if(name==='overview') loadStats();
+  if(name==='premium')  loadPremium();
+  if(name==='guilds')   loadGuilds();
+  if(name==='logs')     loadLogs();
+  if(name==='collabs')  loadCollabs();
+}
+
+// ── User ─────────────────────────────────────────────────────────
+fetch('/api/me').then(r=>r.json()).then(u=>{
+  document.getElementById('ownerName').textContent = u.username||'Owner';
+  const initials = (u.username||'?').slice(0,2).toUpperCase();
+  document.getElementById('userAv').textContent = initials;
+});
+
+// ── STATS ────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const d = await fetch('/api/admin/stats').then(r=>r.json());
+    document.getElementById('statTotal').textContent   = d.totalGuilds||0;
+    document.getElementById('statPremium').textContent = d.premiumGuilds||0;
+    document.getElementById('statRevenue').textContent = ((d.totalRevenue||0).toFixed(2))+'€';
+    const last = d.recentActivations?.[0];
+    if(last){
+      document.getElementById('statLast').textContent     = last.guildName||last.guildId;
+      document.getElementById('statLastDate').textContent = new Date(last.createdAt).toLocaleDateString('fr-FR');
+    }
+    const list = document.getElementById('recentList');
+    if(!d.recentActivations?.length){
+      list.innerHTML='<div style="padding:2rem;text-align:center;color:var(--muted)">Aucune activation.</div>';
+      return;
+    }
+    list.innerHTML = d.recentActivations.map(l=>`
+      <div class="recent-item">
+        <div class="recent-icon">⭐</div>
+        <div class="recent-info">
+          <strong>${l.guildName||l.guildId}</strong>
+          <span>${l.username||l.userId||'Inconnu'} — ${l.method} — ${l.amount?.toFixed(2)||'?'}€</span>
+        </div>
+        <div class="recent-time">${new Date(l.createdAt).toLocaleDateString('fr-FR')}</div>
+      </div>`).join('');
+  } catch(e){ console.error(e); }
+}
+
+// ── PREMIUM ──────────────────────────────────────────────────────
+async function loadPremium() {
+  try {
+    const d = await fetch('/api/admin/premium').then(r=>r.json());
+    const tb = document.getElementById('premiumTable');
+    if(!d.guilds?.length){
+      tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:2rem">Aucun serveur premium actif.</td></tr>';
+      return;
+    }
+    tb.innerHTML = d.guilds.map(g=>`
+      <tr>
+        <td><strong>${g.guildName||'—'}</strong></td>
+        <td class="mono">${g.guildId}</td>
+        <td>${g.premiumExpires?new Date(g.premiumExpires).toLocaleDateString('fr-FR'):'∞ À vie'}</td>
+        <td style="color:var(--muted);font-size:0.8rem">${g.premiumNote||'—'}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="revokePremium('${g.guildId}')">Révoquer</button></td>
+      </tr>`).join('');
+  } catch(e){ console.error(e); }
+}
+
+async function activatePremium() {
+  const body = {
+    guildId:   document.getElementById('pmGuildId').value.trim(),
+    guildName: document.getElementById('pmGuildName').value.trim(),
+    userId:    document.getElementById('pmUserId').value.trim(),
+    username:  document.getElementById('pmUsername').value.trim(),
+    days:      parseInt(document.getElementById('pmDays').value),
+    method:    document.getElementById('pmMethod').value,
+    amount:    parseFloat(document.getElementById('pmAmount').value),
+    note:      document.getElementById('pmNote').value.trim(),
+  };
+  if(!body.guildId){ showAlert('premiumAlert','error','Guild ID requis.'); return; }
+  try {
+    const d = await fetch('/api/admin/premium/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(d.success){ showAlert('premiumAlert','success',`✅ Premium activé pour ${body.guildId} — expire le ${new Date(d.expiresAt).toLocaleDateString('fr-FR')}`); loadPremium(); }
+    else showAlert('premiumAlert','error',d.error||'Erreur');
+  } catch{ showAlert('premiumAlert','error','Erreur réseau'); }
+}
+
+async function revokePremium(guildId) {
+  if(!confirm(`Révoquer le Premium de ${guildId} ?`)) return;
+  const d = await fetch('/api/admin/premium/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guildId})}).then(r=>r.json());
+  if(d.success) loadPremium();
+}
+
+function clearPremiumForm() {
+  ['pmGuildId','pmGuildName','pmUserId','pmUsername','pmNote'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('pmAmount').value='1.99';
+}
+
+// ── GUILDS ───────────────────────────────────────────────────────
+async function loadGuilds() {
+  try {
+    const d = await fetch('/api/admin/guilds').then(r=>r.json());
+    const tb = document.getElementById('guildsTable');
+    if(!d.length){ tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted)">Aucun serveur.</td></tr>'; return; }
+    tb.innerHTML = d.map(g=>`
+      <tr>
+        <td><strong>${g.guildName||'—'}</strong></td>
+        <td class="mono">${g.guildId}</td>
+        <td><span class="badge ${g.premium?'badge-premium':'badge-free'}">${g.premium?'⭐ Premium':'Gratuit'}</span></td>
+        <td class="mono">${g.prefix||'!'}</td>
+        <td style="color:var(--muted);font-size:0.8rem">${g.updatedAt?new Date(g.updatedAt).toLocaleDateString('fr-FR'):'—'}</td>
+      </tr>`).join('');
+  } catch(e){ console.error(e); }
+}
+
+// ── SEARCH ───────────────────────────────────────────────────────
+async function searchUser() {
+  const q = document.getElementById('searchQ').value.trim();
+  if(!q) return;
+  const res = document.getElementById('searchResults');
+  res.innerHTML='<span style="color:var(--muted)">Recherche…</span>';
+  try {
+    const d = await fetch('/api/admin/search-user?q='+encodeURIComponent(q)).then(r=>r.json());
+    if(!d.logs?.length){ res.innerHTML='<span style="color:var(--muted)">Aucun résultat trouvé.</span>'; return; }
+    res.innerHTML=`<div class="table-wrap" style="margin-top:1rem"><table>
+      <thead><tr><th>Serveur</th><th>Utilisateur</th><th>Méthode</th><th>Montant</th><th>Date</th></tr></thead>
+      <tbody>${d.logs.map(l=>`<tr>
+        <td><strong>${l.guildName||l.guildId}</strong><br><span class="mono" style="font-size:0.72rem;color:var(--muted)">${l.guildId}</span></td>
+        <td>${l.username||'—'}<br><span class="mono" style="font-size:0.72rem;color:var(--muted)">${l.userId||''}</span></td>
+        <td>${l.method||'—'}</td>
+        <td style="color:var(--gold);font-weight:700">${l.amount?.toFixed(2)||'?'}€</td>
+        <td style="color:var(--muted);font-size:0.8rem">${new Date(l.createdAt).toLocaleDateString('fr-FR')}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  } catch{ res.innerHTML='<span style="color:var(--muted)">Erreur réseau.</span>'; }
+}
+
+// ── LOGS ─────────────────────────────────────────────────────────
+async function loadLogs() {
+  try {
+    const d = await fetch('/api/admin/premium').then(r=>r.json());
+    const tb = document.getElementById('logsTable');
+    if(!d.logs?.length){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:2rem">Aucun log.</td></tr>'; return; }
+    tb.innerHTML = d.logs.map(l=>`
+      <tr>
+        <td class="mono" style="font-size:0.78rem">${new Date(l.createdAt).toLocaleDateString('fr-FR')}</td>
+        <td><strong>${l.guildName||'?'}</strong><br><span class="mono" style="font-size:0.72rem;color:var(--muted)">${l.guildId}</span></td>
+        <td>${l.username||'—'}<br><span class="mono" style="font-size:0.72rem;color:var(--muted)">${l.userId||''}</span></td>
+        <td>${l.method||'—'}</td>
+        <td style="color:var(--gold);font-weight:700">${l.amount?.toFixed(2)||'?'}€</td>
+        <td style="color:var(--muted);font-size:0.8rem">${l.expiresAt?new Date(l.expiresAt).toLocaleDateString('fr-FR'):'∞'}</td>
+      </tr>`).join('');
+  } catch(e){ console.error(e); }
+}
+
+// ── COLLABS ──────────────────────────────────────────────────────
+async function loadCollabs() {
+  try {
+    const collabs = await fetch('/api/collabs').then(r=>r.json());
+    renderCollabList(collabs);
+  } catch{ console.error('Erreur chargement collabs'); }
+}
+
+function renderCollabList(collabs) {
+  const list = document.getElementById('collabList');
+  const count = document.getElementById('collabCount');
+  count.textContent = (collabs.length||0)+' élément'+(collabs.length>1?'s':'');
+  if(!collabs.length){
+    list.innerHTML='<div style="padding:2.5rem;text-align:center;color:var(--dim)">Aucune collaboration pour le moment.<br>Utilisez le formulaire ci-dessus.</div>';
+    return;
+  }
+  const platEmoji={YouTube:'🎬',Twitch:'🎮',TikTok:'🎵',Instagram:'📸',Twitter:'🐦'};
+  list.innerHTML = collabs.map(c=>`
+    <div class="collab-item">
+      <div class="collab-av">
+        ${c.avatar?`<img src="${c.avatar}" alt="${c.name}">`:`<span>${c.emoji||'👤'}</span>`}
+      </div>
+      <div class="collab-info">
+        <div class="collab-nm">${c.name}</div>
+        <div class="collab-pl">${platEmoji[c.platform]||'🌐'} ${c.platform} ${c.credit?'· '+c.credit:''}</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="deleteCollab('${c._id}')">🗑</button>
+    </div>`).join('');
+}
+
+async function addCollab() {
+  const name     = document.getElementById('clName').value.trim();
+  const platform = document.getElementById('clPlatform').value;
+  const emoji    = document.getElementById('clEmoji').value.trim();
+  const avatar   = document.getElementById('clAvatar').value.trim();
+  const credit   = document.getElementById('clCredit').value.trim();
+
+  if(!name){ showAlert('collabAlert','error','Le nom est requis.'); return; }
+
+  try {
+    const d = await fetch('/api/admin/collabs',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,platform,emoji:emoji||'👤',avatar,credit})
+    }).then(r=>r.json());
+
+    if(d.success){
+      showAlert('collabAlert','success','✅ Collaboration ajoutée ! Visible sur la landing page.');
+      ['clName','clEmoji','clAvatar','clCredit'].forEach(id=>document.getElementById(id).value='');
+      loadCollabs();
+    } else {
+      showAlert('collabAlert','error',d.error||'Erreur serveur');
+    }
+  } catch{ showAlert('collabAlert','error','Erreur réseau'); }
+}
+
+async function deleteCollab(id) {
+  if(!confirm('Supprimer cette collaboration ?')) return;
+  try {
+    const d = await fetch('/api/admin/collabs/'+id,{method:'DELETE'}).then(r=>r.json());
+    if(d.success) loadCollabs();
+    else showAlert('collabAlert','error',d.error||'Erreur');
+  } catch{ showAlert('collabAlert','error','Erreur réseau'); }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+function showAlert(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = `alert alert-${type} show`;
+  el.textContent = msg;
+  setTimeout(()=>el.classList.remove('show'),4000);
+}
+
+// Init
+loadStats();
+</script>
+</body>
+</html>
