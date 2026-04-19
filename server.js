@@ -45,7 +45,7 @@ function rateLimit({ windowMs, max, message }) {
 setInterval(() => { const now = Date.now(); for (const [k, v] of rateLimitStore.entries()) if (now > v.resetAt) rateLimitStore.delete(k); }, 10 * 60 * 1000);
 
 const apiLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, max: 150, message: 'Trop de requêtes API.' });
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10,  message: 'Trop de tentatives.' });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20,  message: 'Trop de tentatives.' });
 const saveLimiter = rateLimit({ windowMs: 60 * 1000,      max: 20,  message: 'Trop de sauvegardes.' });
 
 // ================================================================
@@ -111,7 +111,7 @@ function getPaymentLog() { return mongoose.models.PaymentLog || mongoose.model('
 function getCollab()     { return mongoose.models.Collab     || mongoose.model('Collab',     CollabSchema); }
 
 // ================================================================
-//  AUTH DISCORD — retry backoff anti rate-limit
+//  AUTH DISCORD
 // ================================================================
 app.get('/auth/discord', authLimiter, (req, res) => {
   const params = new URLSearchParams({
@@ -127,38 +127,46 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
   const { code } = req.query;
   if (!code) return res.redirect('/login');
 
-  async function discordPost(url, data, retries = 3) {
-    for (let i = 0; i < retries; i++) {
-      try {
-        return await axios.post(url, data, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-      } catch (err) {
-        if (err.response?.status === 429 && i < retries - 1) {
-          const wait = ((err.response.headers['retry-after'] || 30) * 1000) * Math.pow(2, i);
-          await new Promise(r => setTimeout(r, wait));
-        } else throw err;
-      }
-    }
-  }
-
   try {
-    const tokenRes = await discordPost('https://discord.com/api/oauth2/token',
+    const tokenRes = await axios.post(
+      'https://discord.com/api/oauth2/token',
       new URLSearchParams({
         client_id: process.env.DISCORD_CLIENT_ID,
         client_secret: process.env.DISCORD_CLIENT_SECRET,
         grant_type: 'authorization_code',
         code,
         redirect_uri: CALLBACK_URL,
-      })
+      }),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 8000,
+      }
     );
+
     const { access_token } = tokenRes.data;
+
     const [userRes, guildsRes] = await Promise.all([
-      axios.get('https://discord.com/api/users/@me',        { headers: { Authorization: `Bearer ${access_token}` } }),
-      axios.get('https://discord.com/api/users/@me/guilds', { headers: { Authorization: `Bearer ${access_token}` } }),
+      axios.get('https://discord.com/api/users/@me', {
+        headers: { Authorization: `Bearer ${access_token}` },
+        timeout: 5000,
+      }),
+      axios.get('https://discord.com/api/users/@me/guilds', {
+        headers: { Authorization: `Bearer ${access_token}` },
+        timeout: 5000,
+      }),
     ]);
+
     req.session.user = {
-      id: userRes.data.id, username: userRes.data.username,
-      avatar: userRes.data.avatar, guilds: guildsRes.data,
+      id: userRes.data.id,
+      username: userRes.data.username,
+      avatar: userRes.data.avatar,
+      guilds: guildsRes.data,
     };
+
+    await new Promise((resolve, reject) =>
+      req.session.save(err => err ? reject(err) : resolve())
+    );
+
     if (userRes.data.id === process.env.OWNER_DISCORD_ID) return res.redirect('/admin');
     res.redirect('/dashboard');
   } catch (err) {
@@ -189,7 +197,7 @@ app.get('/api/me', requireAuth, apiLimiter, (req, res) => {
   res.json({ id: u.id, username: u.username, avatar: u.avatar, guilds: u.guilds, isOwner: u.id === process.env.OWNER_DISCORD_ID });
 });
 
-// Cache bot guilds 5 minutes pour éviter le rate limit Discord
+// Cache bot guilds 5 minutes
 let botGuildCache = { ids: new Set(), expiresAt: 0 };
 
 app.get('/api/guilds', requireAuth, apiLimiter, async (req, res) => {
@@ -203,7 +211,8 @@ app.get('/api/guilds', requireAuth, apiLimiter, async (req, res) => {
     if (now > botGuildCache.expiresAt) {
       try {
         const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
-          headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN }
+          headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN },
+          timeout: 5000,
         });
         botGuildCache.ids = new Set(botGuilds.data.map(g => g.id));
         botGuildCache.expiresAt = now + 5 * 60 * 1000;
@@ -247,14 +256,20 @@ app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (r
 
 app.get('/api/guild/:guildId/channels', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
-    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/channels`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
+    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/channels`, {
+      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN },
+      timeout: 5000,
+    });
     res.json(r.data.filter(c => c.type === 0 || c.type === 2 || c.type === 4).map(c => ({ id: c.id, name: c.name, type: c.type })));
   } catch { res.status(500).json({ error: 'Erreur channels' }); }
 });
 
 app.get('/api/guild/:guildId/roles', requireAuth, requireAdmin, apiLimiter, async (req, res) => {
   try {
-    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
+    const r = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, {
+      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN },
+      timeout: 5000,
+    });
     res.json(r.data.filter(r => r.name !== '@everyone').map(r => ({ id: r.id, name: r.name })));
   } catch { res.status(500).json({ error: 'Erreur roles' }); }
 });
@@ -277,7 +292,8 @@ app.post('/api/guild/:guildId/send-message', requireAuth, requireAdmin, saveLimi
     }
     if (!payload.content && !payload.embeds) return res.status(400).json({ error: 'Contenu requis' });
     await axios.post(`https://discord.com/api/v10/channels/${channelId}/messages`, payload, {
-      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN, 'Content-Type': 'application/json' }
+      headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN, 'Content-Type': 'application/json' },
+      timeout: 5000,
     });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Erreur envoi message' }); }
