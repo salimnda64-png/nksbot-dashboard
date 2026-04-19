@@ -7,17 +7,14 @@ const axios = require('axios');
 const path = require('path');
 
 const app = express();
-app.set('trust proxy', 1); // Nécessaire pour HTTPS sur Render
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 10000;
 
-// ================================================================
-//  CHEMINS
-// ================================================================
-const VIEWS = path.join(__dirname, 'views');   // HTML
-const PUBLIC = path.join(__dirname, 'public'); // CSS, JS statiques
+const VIEWS = path.join(__dirname, 'views');
+const PUBLIC = path.join(__dirname, 'public');
 
 // ================================================================
-//  SÉCURITÉ — Headers HTTP
+//  SÉCURITÉ
 // ================================================================
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -60,8 +57,6 @@ mongoose.connect(process.env.MONGODB_URI)
 
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
-
-// ✅ Sert UNIQUEMENT le dossier public/ — jamais la racine (évite .env exposé)
 app.use(express.static(PUBLIC));
 
 app.use(session({
@@ -73,7 +68,7 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: 'lax',
-    secure: true, // Render utilise HTTPS
+    secure: true,
   },
 }));
 
@@ -105,11 +100,18 @@ const PaymentLogSchema = new mongoose.Schema({
   method: String, amount: Number, note: String, expiresAt: Date,
   createdAt: { type: Date, default: Date.now },
 });
+const CollabSchema = new mongoose.Schema({
+  name: String, platform: String,
+  emoji: String, avatar: String,
+  credit: String, order: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+});
 function getGuild()      { return mongoose.models.Guild      || mongoose.model('Guild',      GuildSchema); }
 function getPaymentLog() { return mongoose.models.PaymentLog || mongoose.model('PaymentLog', PaymentLogSchema); }
+function getCollab()     { return mongoose.models.Collab     || mongoose.model('Collab',     CollabSchema); }
 
 // ================================================================
-//  AUTH DISCORD
+//  AUTH DISCORD — retry backoff anti rate-limit
 // ================================================================
 app.get('/auth/discord', authLimiter, (req, res) => {
   const params = new URLSearchParams({
@@ -124,16 +126,29 @@ app.get('/auth/discord', authLimiter, (req, res) => {
 app.get('/auth/callback', authLimiter, async (req, res) => {
   const { code } = req.query;
   if (!code) return res.redirect('/login');
+
+  async function discordPost(url, data, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await axios.post(url, data, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      } catch (err) {
+        if (err.response?.status === 429 && i < retries - 1) {
+          const wait = ((err.response.headers['retry-after'] || 30) * 1000) * Math.pow(2, i);
+          await new Promise(r => setTimeout(r, wait));
+        } else throw err;
+      }
+    }
+  }
+
   try {
-    const tokenRes = await axios.post('https://discord.com/api/oauth2/token',
+    const tokenRes = await discordPost('https://discord.com/api/oauth2/token',
       new URLSearchParams({
         client_id: process.env.DISCORD_CLIENT_ID,
         client_secret: process.env.DISCORD_CLIENT_SECRET,
         grant_type: 'authorization_code',
         code,
         redirect_uri: CALLBACK_URL,
-      }),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      })
     );
     const { access_token } = tokenRes.data;
     const [userRes, guildsRes] = await Promise.all([
@@ -155,7 +170,7 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
 app.get('/auth/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
 // ================================================================
-//  PAGES HTML — servies depuis views/
+//  PAGES HTML
 // ================================================================
 app.get('/',                   (req, res) => res.redirect('/login'));
 app.get('/login',              (req, res) => res.sendFile(path.join(VIEWS, 'login.html')));
@@ -174,16 +189,28 @@ app.get('/api/me', requireAuth, apiLimiter, (req, res) => {
   res.json({ id: u.id, username: u.username, avatar: u.avatar, guilds: u.guilds, isOwner: u.id === process.env.OWNER_DISCORD_ID });
 });
 
+// Cache bot guilds 5 minutes pour éviter le rate limit Discord
+let botGuildCache = { ids: new Set(), expiresAt: 0 };
+
 app.get('/api/guilds', requireAuth, apiLimiter, async (req, res) => {
   try {
     const Guild = getGuild();
     const adminGuilds = req.session.user.guilds.filter(g => (g.permissions & 0x8) === 0x8 || g.owner);
     const dbGuilds = await Guild.find({ guildId: { $in: adminGuilds.map(g => g.id) } });
     let botGuildIds = new Set(dbGuilds.map(db => db.guildId));
-    try {
-      const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', { headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN } });
-      botGuilds.data.forEach(g => botGuildIds.add(g.id));
-    } catch {}
+
+    const now = Date.now();
+    if (now > botGuildCache.expiresAt) {
+      try {
+        const botGuilds = await axios.get('https://discord.com/api/v10/users/@me/guilds', {
+          headers: { Authorization: 'Bot ' + process.env.BOT_TOKEN }
+        });
+        botGuildCache.ids = new Set(botGuilds.data.map(g => g.id));
+        botGuildCache.expiresAt = now + 5 * 60 * 1000;
+      } catch {}
+    }
+    botGuildCache.ids.forEach(id => botGuildIds.add(id));
+
     res.json(adminGuilds.map(g => ({
       ...g,
       botPresent: botGuildIds.has(g.id),
@@ -211,7 +238,6 @@ app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (r
       delete body.aiMemory;
       delete body.tempVoice;
       delete body.botStatus;
-      // ✅ socialNotifs sauvegardé pour tous (lecture MongoDB dans socialNotifs.js)
       if (body.tickets) body.tickets.maxOpen = Math.min(body.tickets.maxOpen || 5, 5);
     }
     await Guild.findOneAndUpdate({ guildId: req.params.guildId }, body, { upsert: true });
@@ -348,61 +374,35 @@ app.get('/api/admin/search-user', requireAuth, requireOwner, async (req, res) =>
 // ================================================================
 //  API — Stats & Collabs
 // ================================================================
-
-// Stats publiques pour la landing page
 app.get('/api/stats', async (req, res) => {
   try {
-    const Guild = getGuild();
-    const total = await Guild.countDocuments();
+    const total = await getGuild().countDocuments();
     res.json({ servers: total });
-  } catch {
-    res.json({ servers: 0 });
-  }
+  } catch { res.json({ servers: 0 }); }
 });
 
-// GET collaborations (publiques — landing page)
 app.get('/api/collabs', async (req, res) => {
   try {
-    const CollabSchema = mongoose.models.Collab
-      ? null
-      : new mongoose.Schema({
-          name: String, platform: String,
-          emoji: String, avatar: String,
-          credit: String, order: { type: Number, default: 0 },
-          createdAt: { type: Date, default: Date.now },
-        });
-    const Collab = mongoose.models.Collab || mongoose.model('Collab', CollabSchema);
-    const collabs = await Collab.find({}).sort({ order: 1, createdAt: -1 });
+    const collabs = await getCollab().find({}).sort({ order: 1, createdAt: -1 });
     res.json(collabs);
-  } catch {
-    res.json([]);
-  }
+  } catch { res.json([]); }
 });
 
-// POST ajouter une collaboration (owner uniquement)
 app.post('/api/admin/collabs', requireAuth, requireOwner, async (req, res) => {
   try {
-    const Collab = mongoose.models.Collab;
-    if (!Collab) return res.status(500).json({ error: 'Modèle non chargé' });
     const { name, platform, emoji, avatar, credit } = req.body;
     if (!name || !platform) return res.status(400).json({ error: 'Nom et plateforme requis' });
-    const c = new Collab({ name, platform, emoji: emoji || '👤', avatar: avatar || '', credit: credit || '' });
+    const c = new (getCollab())({ name, platform, emoji: emoji || '👤', avatar: avatar || '', credit: credit || '' });
     await c.save();
     res.json({ success: true, collab: c });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE supprimer une collaboration (owner uniquement)
 app.delete('/api/admin/collabs/:id', requireAuth, requireOwner, async (req, res) => {
   try {
-    const Collab = mongoose.models.Collab;
-    await Collab.findByIdAndDelete(req.params.id);
+    await getCollab().findByIdAndDelete(req.params.id);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ================================================================
