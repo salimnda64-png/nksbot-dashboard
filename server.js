@@ -211,7 +211,7 @@ app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (r
       delete body.aiMemory;
       delete body.tempVoice;
       delete body.botStatus;
-      delete body.socialNotifs;
+      // socialNotifs sauvegardé pour tous (lecture MongoDB dans socialNotifs.js)
       if (body.tickets) body.tickets.maxOpen = Math.min(body.tickets.maxOpen || 5, 5);
     }
     await Guild.findOneAndUpdate({ guildId: req.params.guildId }, body, { upsert: true });
