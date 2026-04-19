@@ -411,7 +411,7 @@ app.delete('/api/admin/collabs/:id', requireAuth, requireOwner, async (req, res)
 app.use((req, res) => res.status(404).json({ error: 'Route introuvable' }));
 app.use((err, req, res, next) => { console.error(err.message); res.status(500).json({ error: 'Erreur interne' }); });
 
-app.listen(PORT, () => {
-  console.log(`🌐 Dashboard sur http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🌐 Dashboard sur http://0.0.0.0:${PORT}`);
   console.log(`👑 Owner ID: ${process.env.OWNER_DISCORD_ID}`);
 });
