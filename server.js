@@ -211,7 +211,7 @@ app.post('/api/guild/:guildId', requireAuth, requireAdmin, saveLimiter, async (r
       delete body.aiMemory;
       delete body.tempVoice;
       delete body.botStatus;
-      // socialNotifs sauvegardé pour tous (lecture MongoDB dans socialNotifs.js)
+      // ✅ socialNotifs sauvegardé pour tous (lecture MongoDB dans socialNotifs.js)
       if (body.tickets) body.tickets.maxOpen = Math.min(body.tickets.maxOpen || 5, 5);
     }
     await Guild.findOneAndUpdate({ guildId: req.params.guildId }, body, { upsert: true });
@@ -343,6 +343,66 @@ app.get('/api/admin/search-user', requireAuth, requireOwner, async (req, res) =>
     const logs = await getPaymentLog().find({ $or: [{ guildId: q }, { userId: q }, { username: { $regex: q, $options: 'i' } }, { guildName: { $regex: q, $options: 'i' } }] }).sort({ createdAt: -1 });
     res.json({ logs });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ================================================================
+//  API — Stats & Collabs
+// ================================================================
+
+// Stats publiques pour la landing page
+app.get('/api/stats', async (req, res) => {
+  try {
+    const Guild = getGuild();
+    const total = await Guild.countDocuments();
+    res.json({ servers: total });
+  } catch {
+    res.json({ servers: 0 });
+  }
+});
+
+// GET collaborations (publiques — landing page)
+app.get('/api/collabs', async (req, res) => {
+  try {
+    const CollabSchema = mongoose.models.Collab
+      ? null
+      : new mongoose.Schema({
+          name: String, platform: String,
+          emoji: String, avatar: String,
+          credit: String, order: { type: Number, default: 0 },
+          createdAt: { type: Date, default: Date.now },
+        });
+    const Collab = mongoose.models.Collab || mongoose.model('Collab', CollabSchema);
+    const collabs = await Collab.find({}).sort({ order: 1, createdAt: -1 });
+    res.json(collabs);
+  } catch {
+    res.json([]);
+  }
+});
+
+// POST ajouter une collaboration (owner uniquement)
+app.post('/api/admin/collabs', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const Collab = mongoose.models.Collab;
+    if (!Collab) return res.status(500).json({ error: 'Modèle non chargé' });
+    const { name, platform, emoji, avatar, credit } = req.body;
+    if (!name || !platform) return res.status(400).json({ error: 'Nom et plateforme requis' });
+    const c = new Collab({ name, platform, emoji: emoji || '👤', avatar: avatar || '', credit: credit || '' });
+    await c.save();
+    res.json({ success: true, collab: c });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE supprimer une collaboration (owner uniquement)
+app.delete('/api/admin/collabs/:id', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const Collab = mongoose.models.Collab;
+    await Collab.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ================================================================
